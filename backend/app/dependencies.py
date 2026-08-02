@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import AsyncGenerator
 
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -25,8 +26,7 @@ from database.repository import (
 )
 from evaluation.metrics import MetricsCollector
 from matching.engine import MatchingEngine
-from simulation.orchestrator import SimulationOrchestrator, SimulationParameters
-
+from simulation.orchestrator import SimulationOrchestrator
 
 # ── Infrastructure ────────────────────────────────────────────────
 
@@ -47,61 +47,37 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-async def get_simulation_repo(session: AsyncSession = None) -> SimulationRepository:
-    if session is None:
-        async for s in get_db_session():
-            return SimulationRepository(s)
+async def get_simulation_repo(session: AsyncSession = Depends(get_db)) -> SimulationRepository:
     return SimulationRepository(session)
 
 
-async def get_order_repo(session: AsyncSession = None) -> OrderRepository:
-    if session is None:
-        async for s in get_db_session():
-            return OrderRepository(s)
+async def get_order_repo(session: AsyncSession = Depends(get_db)) -> OrderRepository:
     return OrderRepository(session)
 
 
-async def get_trade_repo(session: AsyncSession = None) -> TradeRepository:
-    if session is None:
-        async for s in get_db_session():
-            return TradeRepository(s)
+async def get_trade_repo(session: AsyncSession = Depends(get_db)) -> TradeRepository:
     return TradeRepository(session)
 
 
-async def get_agent_repo(session: AsyncSession = None) -> AgentRepository:
-    if session is None:
-        async for s in get_db_session():
-            return AgentRepository(s)
+async def get_agent_repo(session: AsyncSession = Depends(get_db)) -> AgentRepository:
     return AgentRepository(session)
 
 
-async def get_agent_action_repo(session: AsyncSession = None) -> AgentActionRepository:
-    if session is None:
-        async for s in get_db_session():
-            return AgentActionRepository(s)
+async def get_agent_action_repo(session: AsyncSession = Depends(get_db)) -> AgentActionRepository:
     return AgentActionRepository(session)
 
 
-async def get_training_log_repo(session: AsyncSession = None) -> TrainingLogRepository:
-    if session is None:
-        async for s in get_db_session():
-            return TrainingLogRepository(s)
+async def get_training_log_repo(session: AsyncSession = Depends(get_db)) -> TrainingLogRepository:
     return TrainingLogRepository(session)
 
 
 async def get_evaluation_result_repo(
-    session: AsyncSession = None,
+    session: AsyncSession = Depends(get_db),
 ) -> EvaluationResultRepository:
-    if session is None:
-        async for s in get_db_session():
-            return EvaluationResultRepository(s)
     return EvaluationResultRepository(session)
 
 
-async def get_snapshot_repo(session: AsyncSession = None) -> SnapshotRepository:
-    if session is None:
-        async for s in get_db_session():
-            return SnapshotRepository(s)
+async def get_snapshot_repo(session: AsyncSession = Depends(get_db)) -> SnapshotRepository:
     return SnapshotRepository(session)
 
 

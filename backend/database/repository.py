@@ -92,6 +92,11 @@ class SimulationRepository(BaseRepository):
         sim.metrics_json = metrics_json
         await self.commit()
 
+    async def delete(self, sim_id: int) -> None:
+        sim = await self.get_by_id(sim_id)
+        await self._session.delete(sim)
+        await self.commit()
+
     async def count(self) -> int:
         stmt = select(func.count(SimulationORM.id))
         result = await self._session.execute(stmt)
@@ -121,6 +126,18 @@ class OrderRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def list_all(
+        self,
+        simulation_id: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[OrderORM]:
+        stmt = select(OrderORM).order_by(OrderORM.id.desc()).limit(limit).offset(offset)
+        if simulation_id is not None:
+            stmt = stmt.where(OrderORM.simulation_id == simulation_id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
 
 # ── Trade Repository ───────────────────────────────────────────────
 
@@ -147,6 +164,23 @@ class TradeRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_by_id(self, trade_id: str) -> Optional[TradeORM]:
+        stmt = select(TradeORM).where(TradeORM.trade_id == trade_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_all(
+        self,
+        simulation_id: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[TradeORM]:
+        stmt = select(TradeORM).order_by(TradeORM.id.desc()).limit(limit).offset(offset)
+        if simulation_id is not None:
+            stmt = stmt.where(TradeORM.simulation_id == simulation_id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
 
 # ── Agent Repository ────────────────────────────────────────────────
 
@@ -163,6 +197,11 @@ class AgentRepository(BaseRepository):
 
     async def get_by_simulation(self, sim_id: int) -> list[AgentORM]:
         stmt = select(AgentORM).where(AgentORM.simulation_id == sim_id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_all(self, limit: int = 50, offset: int = 0) -> list[AgentORM]:
+        stmt = select(AgentORM).order_by(AgentORM.id.desc()).limit(limit).offset(offset)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -241,6 +280,16 @@ class TrainingLogRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def list_all(self, limit: int = 50, offset: int = 0) -> list[TrainingLogORM]:
+        stmt = (
+            select(TrainingLogORM)
+            .order_by(TrainingLogORM.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
 
 # ── Evaluation Result Repository ────────────────────────────────────
 
@@ -275,6 +324,18 @@ class EvaluationResultRepository(BaseRepository):
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_all(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[EvaluationResultORM]:
+        stmt = (
+            select(EvaluationResultORM)
+            .order_by(EvaluationResultORM.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
 
 # ── Snapshot Repository ─────────────────────────────────────────────

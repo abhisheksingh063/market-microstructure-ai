@@ -1,7 +1,6 @@
 """Tests for database repositories — AgentAction, TrainingLog, EvaluationResult."""
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -9,7 +8,6 @@ from database.models import (
     AgentActionORM,
     Base,
     EvaluationResultORM,
-    SimulationORM,
     TrainingLogORM,
 )
 from database.repository import (

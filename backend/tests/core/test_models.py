@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from core.models import Order, OrderBook, OrderSide, OrderType, OrderStatus, Trade, Level
+from core.models import Level, Order, OrderBook, OrderSide, OrderStatus, OrderType, Trade
 
 
 def test_order_defaults():
@@ -63,7 +63,14 @@ def test_order_book_bid_ask():
 
 
 def test_trade_creation():
-    trade = Trade(price=Decimal("100.50"), quantity=50)
+    trade = Trade(
+        buy_order_id="buy-1",
+        sell_order_id="sell-1",
+        price=Decimal("100.50"),
+        quantity=50,
+        buyer_id="a1",
+        seller_id="a2",
+    )
     assert trade.trade_id
     assert trade.price == Decimal("100.50")
     assert trade.quantity == 50

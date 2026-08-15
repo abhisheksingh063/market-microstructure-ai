@@ -1,4 +1,4 @@
-"""Tests for database repositories — AgentAction, TrainingLog, EvaluationResult."""
+"""Tests for database repositories — AgentAction, TrainingLog, EvaluationResult, Trade."""
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -8,12 +8,14 @@ from database.models import (
     AgentActionORM,
     Base,
     EvaluationResultORM,
+    TradeORM,
     TrainingLogORM,
 )
 from database.repository import (
     AgentActionRepository,
     EvaluationResultRepository,
     SimulationRepository,
+    TradeRepository,
     TrainingLogRepository,
 )
 
@@ -93,6 +95,106 @@ class TestAgentActionRepository:
         actions = await repo.get_by_agent(simulation.id, "agent_1")
         assert len(actions) == 1
         assert actions[0].agent_id == "agent_1"
+
+
+class TestTradeRepository:
+    async def test_save_and_get_by_id(self, db_session, simulation):
+        repo = TradeRepository(db_session)
+        trade = TradeORM(
+            trade_id="trade-1",
+            simulation_id=simulation.id,
+            buy_order_id="buy-1",
+            sell_order_id="sell-1",
+            price=100.5,
+            quantity=10,
+            buyer_id="agent_1",
+            seller_id="agent_2",
+        )
+        await repo.save(trade)
+        assert trade.id is not None
+
+        loaded = await repo.get_by_id("trade-1")
+        assert loaded is not None
+        assert loaded.price == 100.5
+        assert loaded.quantity == 10
+        assert loaded.buyer_id == "agent_1"
+        assert loaded.seller_id == "agent_2"
+
+    async def test_save_many(self, db_session, simulation):
+        repo = TradeRepository(db_session)
+        trades = [
+            TradeORM(
+                trade_id="trade-1",
+                simulation_id=simulation.id,
+                buy_order_id="buy-1",
+                sell_order_id="sell-1",
+                price=100.5,
+                quantity=10,
+                buyer_id="agent_1",
+                seller_id="agent_2",
+            ),
+            TradeORM(
+                trade_id="trade-2",
+                simulation_id=simulation.id,
+                buy_order_id="buy-2",
+                sell_order_id="sell-2",
+                price=101.0,
+                quantity=5,
+                buyer_id="agent_1",
+                seller_id="agent_3",
+            ),
+        ]
+        await repo.save_many(trades)
+        assert len(trades) == 2
+
+    async def test_get_by_simulation(self, db_session, simulation):
+        repo = TradeRepository(db_session)
+        await repo.save(
+            TradeORM(
+                trade_id="trade-1",
+                simulation_id=simulation.id,
+                buy_order_id="buy-1",
+                sell_order_id="sell-1",
+                price=100.5,
+                quantity=10,
+                buyer_id="agent_1",
+                seller_id="agent_2",
+            )
+        )
+        await repo.save(
+            TradeORM(
+                trade_id="trade-2",
+                simulation_id=simulation.id,
+                buy_order_id="buy-2",
+                sell_order_id="sell-2",
+                price=101.0,
+                quantity=5,
+                buyer_id="agent_1",
+                seller_id="agent_3",
+            )
+        )
+
+        trades = await repo.get_by_simulation(simulation.id)
+        assert len(trades) == 2
+
+    async def test_list_all(self, db_session, simulation):
+        repo = TradeRepository(db_session)
+        await repo.save(
+            TradeORM(
+                trade_id="trade-1",
+                simulation_id=simulation.id,
+                buy_order_id="buy-1",
+                sell_order_id="sell-1",
+                price=100.5,
+                quantity=10,
+                buyer_id="agent_1",
+                seller_id="agent_2",
+            )
+        )
+
+        trades = await repo.list_all()
+        assert len(trades) == 1
+        assert trades[0].trade_id == "trade-1"
 
 
 class TestTrainingLogRepository:

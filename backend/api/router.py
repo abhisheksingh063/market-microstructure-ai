@@ -37,8 +37,9 @@ from core.config import settings
 from core.constants import ORDER_ID_LENGTH
 from core.enums import OrderStatus, SimulationStatus
 from core.logging import get_logger
+from core.models import Trade
 from database.database import get_db_session
-from database.models import AgentORM, OrderORM
+from database.models import AgentORM, OrderORM, TradeORM
 from database.repository import (
     AgentRepository,
     EvaluationResultRepository,
@@ -180,6 +181,7 @@ async def _run_simulation(orchestrator: SimulationOrchestrator, sim_id: int) -> 
             SimulationStatus.COMPLETED,
             json.dumps(asdict(final_metrics), default=str),
         )
+        await _persist_trades(sim_id, orchestrator.order_book.trades)
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -201,6 +203,30 @@ async def _persist_outcome(
         await repo.update_status(sim_id, status)
         if metrics_json is not None:
             await repo.update_metrics(sim_id, metrics_json)
+
+
+async def _persist_trades(sim_id: int, trades: list[Trade]) -> None:
+    """Persist executed trades for a completed simulation."""
+    if not trades:
+        return
+    async for session in get_db_session():
+        repo = TradeRepository(session)
+        await repo.save_many(
+            [
+                TradeORM(
+                    trade_id=trade.trade_id,
+                    simulation_id=sim_id,
+                    buy_order_id=trade.buy_order_id,
+                    sell_order_id=trade.sell_order_id,
+                    price=float(trade.price),
+                    quantity=trade.quantity,
+                    buyer_id=trade.buyer_id,
+                    seller_id=trade.seller_id,
+                    timestamp=trade.timestamp,
+                )
+                for trade in trades
+            ]
+        )
 
 
 # ── Order Book ──────────────────────────────────────────────────────

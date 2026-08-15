@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from core.models import Order, OrderBook, OrderSide, OrderType, OrderStatus
+from core.models import Order, OrderBook, OrderSide, OrderStatus, OrderType
 from matching.engine import MatchingEngine
 
 
@@ -68,6 +68,28 @@ def test_order_cancellation():
     assert cancelled is not None
     assert cancelled.status == OrderStatus.CANCELLED
     assert book.get_order(order.order_id) is None
+
+
+def test_trade_references_price_and_sides():
+    book = OrderBook()
+    engine = MatchingEngine(book)
+
+    ask = Order(agent_id="seller", side=OrderSide.SELL, order_type=OrderType.LIMIT,
+                price=Decimal("100"), quantity=30)
+    engine.process_order(ask)
+
+    market_buy = Order(agent_id="buyer", side=OrderSide.BUY,
+                       order_type=OrderType.MARKET, quantity=20)
+    trades = engine.process_order(market_buy)
+
+    assert len(trades) == 1
+    trade = trades[0].trade
+    assert trade.buy_order_id == market_buy.order_id
+    assert trade.sell_order_id == ask.order_id
+    assert trade.buyer_id == "buyer"
+    assert trade.seller_id == "seller"
+    assert trade.price == Decimal("100")
+    assert trade.quantity == 20
 
 
 def test_fifo_time_priority():

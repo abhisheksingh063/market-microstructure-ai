@@ -47,6 +47,17 @@ class CrossedBookError(MatchingError):
     """Attempted operation would leave the book crossed (bid > ask)."""
 
 
+# ── Trade ─────────────────────────────────────────────────────────────
+
+
+class TradeError(SimulatorError):
+    """Base exception for trade-related errors."""
+
+
+class InvalidTradeError(TradeError):
+    """Trade failed validation (price, quantity, references, etc.)."""
+
+
 # ── Agent ────────────────────────────────────────────────────────────
 
 
@@ -162,6 +173,8 @@ __all__ = [
     "OrderBookError",
     "MatchingError",
     "CrossedBookError",
+    "TradeError",
+    "InvalidTradeError",
     "AgentError",
     "AgentNotFoundError",
     "AgentConfigurationError",

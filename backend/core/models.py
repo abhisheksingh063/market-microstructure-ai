@@ -9,7 +9,7 @@ from typing import Iterator, Optional
 
 from .constants import MAX_ORDER_PRICE, MIN_ORDER_PRICE, ORDER_ID_LENGTH
 from .enums import OrderSide, OrderStatus, OrderType
-from .exceptions import InvalidOrderError
+from .exceptions import InvalidOrderError, InvalidTradeError
 
 
 @dataclass
@@ -67,16 +67,34 @@ class Order:
             self.status = OrderStatus.PARTIAL
 
 
-@dataclass
+@dataclass(frozen=True)
 class Trade:
     trade_id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
     buy_order_id: str = ""
     sell_order_id: str = ""
+    simulation_id: Optional[int] = None
     price: Decimal = Decimal("0")
     quantity: int = 0
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     buyer_id: str = ""
     seller_id: str = ""
+
+    def __post_init__(self) -> None:
+        if self.quantity <= 0:
+            raise InvalidTradeError("Trade quantity must be positive")
+        if not (MIN_ORDER_PRICE <= self.price <= MAX_ORDER_PRICE):
+            raise InvalidTradeError(
+                f"Price {self.price} outside allowed range "
+                f"[{MIN_ORDER_PRICE}, {MAX_ORDER_PRICE}]"
+            )
+        if not self.buy_order_id:
+            raise InvalidTradeError("Trade must reference a buy order")
+        if not self.sell_order_id:
+            raise InvalidTradeError("Trade must reference a sell order")
+        if not self.buyer_id:
+            raise InvalidTradeError("Trade must reference a buyer")
+        if not self.seller_id:
+            raise InvalidTradeError("Trade must reference a seller")
 
 
 @dataclass

@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from core.models import Order, Trade, OrderSide, OrderType
 from agents.base import BaseAgent
+from core.models import Order, OrderSide, Trade
 
 
 def test_base_agent_initial_state():
@@ -15,7 +15,14 @@ def test_base_agent_initial_state():
 
 def test_base_agent_on_trade():
     agent = _ConcreteAgent("a1", "Agent1")
-    trade = Trade(price=Decimal("100"), quantity=10, buyer_id="a1", seller_id="a2")
+    trade = Trade(
+        buy_order_id="buy-1",
+        sell_order_id="sell-1",
+        price=Decimal("100"),
+        quantity=10,
+        buyer_id="a1",
+        seller_id="a2",
+    )
     order = Order(agent_id="a1", side=OrderSide.BUY, quantity=10)
 
     agent.on_trade(trade, order)

@@ -4,15 +4,35 @@ export class WebSocketClient {
   private ws: WebSocket | null = null;
   private handlers = new Map<string, Set<MessageHandler>>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectionListeners = new Set<(connected: boolean) => void>();
   private url: string;
+  private connected = false;
 
   constructor(url: string = `ws://${location.host}/ws`) {
     this.url = url;
   }
 
+  get isConnected() {
+    return this.connected;
+  }
+
+  onConnectionChange(listener: (connected: boolean) => void) {
+    this.connectionListeners.add(listener);
+    listener(this.connected);
+  }
+
+  offConnectionChange(listener: (connected: boolean) => void) {
+    this.connectionListeners.delete(listener);
+  }
+
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return;
     this.ws = new WebSocket(this.url);
+
+    this.ws.onopen = () => {
+      this.connected = true;
+      this.notifyConnectionChange();
+    };
 
     this.ws.onmessage = (event) => {
       try {
@@ -27,6 +47,8 @@ export class WebSocketClient {
     };
 
     this.ws.onclose = () => {
+      this.connected = false;
+      this.notifyConnectionChange();
       this.scheduleReconnect();
     };
 
@@ -54,6 +76,10 @@ export class WebSocketClient {
 
   private scheduleReconnect() {
     this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+  }
+
+  private notifyConnectionChange() {
+    this.connectionListeners.forEach((listener) => listener(this.connected));
   }
 }
 

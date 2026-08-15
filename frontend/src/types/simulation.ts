@@ -18,10 +18,15 @@ export interface SimulationState {
 export interface SimulationResult {
   id: number;
   name: string;
+  config_json: Record<string, unknown>;
   status: "pending" | "running" | "completed" | "failed";
   total_steps: number;
-  metrics: SimulationMetrics | null;
+  random_seed: number | null;
+  metrics_json: SimulationMetrics | null;
   created_at: string;
+  updated_at: string | null;
+  started_at: string | null;
+  ended_at: string | null;
 }
 
 export interface SimulationMetrics {

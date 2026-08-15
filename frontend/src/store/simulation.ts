@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SimulationState, SimulationConfig } from "../types/simulation";
+import type { SimulationState } from "../types/simulation";
 
 interface SimulationStore {
   state: SimulationState | null;

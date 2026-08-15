@@ -16,6 +16,7 @@ from .exceptions import InvalidOrderError
 class Order:
     order_id: str = field(default_factory=lambda: uuid.uuid4().hex[:ORDER_ID_LENGTH])
     agent_id: str = ""
+    simulation_id: Optional[int] = None
     side: OrderSide = OrderSide.BUY
     order_type: OrderType = OrderType.LIMIT
     price: Optional[Decimal] = None
@@ -26,6 +27,10 @@ class Order:
     time_in_force: Optional[int] = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.side, OrderSide):
+            raise InvalidOrderError(f"Invalid order side: {self.side!r}")
+        if not isinstance(self.order_type, OrderType):
+            raise InvalidOrderError(f"Invalid order type: {self.order_type!r}")
         if self.quantity < 0:
             raise InvalidOrderError("Quantity must be non-negative")
         if self.price is not None and not (MIN_ORDER_PRICE <= self.price <= MAX_ORDER_PRICE):
@@ -47,6 +52,14 @@ class Order:
         return self.status in (OrderStatus.PENDING, OrderStatus.PARTIAL)
 
     def fill(self, qty: int) -> None:
+        if not self.is_active:
+            raise InvalidOrderError(f"Cannot fill an order with status {self.status.value}")
+        if qty <= 0:
+            raise InvalidOrderError("Fill quantity must be positive")
+        if qty > self.remaining:
+            raise InvalidOrderError(
+                f"Fill quantity {qty} exceeds remaining quantity {self.remaining}"
+            )
         self.filled_quantity += qty
         if self.filled_quantity >= self.quantity:
             self.status = OrderStatus.FILLED

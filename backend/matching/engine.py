@@ -8,7 +8,7 @@ price-time priority as used by real electronic exchanges.
 from __future__ import annotations
 
 from decimal import Decimal
-from heapq import heappop, heappush
+from heapq import heapify, heappop, heappush
 from typing import Optional
 
 from core.constants import PRICE_LEVELS_CAPACITY_HINT
@@ -183,6 +183,7 @@ class MatchingEngine:
                 level.remove(order_id)
                 if level.is_empty:
                     levels[:] = [(k, lev) for k, lev in levels if lev.price != price]
+                    heapify(levels)
                 break
 
         order.status = OrderStatus.CANCELLED

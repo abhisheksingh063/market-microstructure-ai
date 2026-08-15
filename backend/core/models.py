@@ -198,6 +198,15 @@ class OrderBook:
             return self.best_bid
         return self.best_ask
 
+    @property
+    def is_empty(self) -> bool:
+        return not self.bids and not self.asks
+
+    def __len__(self) -> int:
+        return sum(level.order_count for _, level in self.bids) + sum(
+            level.order_count for _, level in self.asks
+        )
+
     # ── order tracking ─────────────────────────────────────────
 
     def add_order(self, order: Order) -> None:
@@ -234,5 +243,5 @@ class OrderBook:
         return (
             f"OrderBook(bids={len(self.bids)} levels, "
             f"asks={len(self.asks)} levels, "
-            f"orders={len(self._orders)})"
+            f"orders={len(self)})"
         )

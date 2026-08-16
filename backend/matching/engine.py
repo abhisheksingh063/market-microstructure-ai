@@ -168,10 +168,14 @@ class MatchingEngine:
     # ── cancellation ──────────────────────────────────────────
 
     def cancel_order(self, order_id: str) -> Optional[Order]:
-        price = self.book.get_price_for_order(order_id)
-        order = self.book.remove_order(order_id)
+        order = self.book.get_order(order_id)
         if order is None:
             return None
+        if not order.is_active:
+            return None
+
+        price = self.book.get_price_for_order(order_id)
+        self.book.remove_order(order_id)
 
         if price is None:
             order.status = OrderStatus.CANCELLED

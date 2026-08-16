@@ -159,6 +159,25 @@ class TestOrderEndpoints:
         )
         assert resp.status_code == 422
 
+    def test_create_market_order_without_price(self, client):
+        sim = _create_simulation(client)
+        resp = client.post(
+            "/api/orders",
+            json={
+                "simulation_id": sim["id"],
+                "agent_id": "agent_1",
+                "side": "buy",
+                "order_type": "market",
+                "quantity": 25,
+            },
+        )
+        assert resp.status_code == 201
+        order = resp.json()
+        assert order["order_type"] == "market"
+        assert order["price"] is None
+        assert order["status"] == "pending"
+        assert order["remaining_quantity"] == 25
+
     def test_create_order_missing_simulation(self, client):
         resp = client.post(
             "/api/orders",

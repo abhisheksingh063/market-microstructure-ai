@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -21,10 +21,9 @@ from agents.base import BaseAgent
 from core.config import settings
 from core.constants import DEFAULT_TICK_DURATION_MS, SIMULATION_PAUSED_POLL_INTERVAL_SEC
 from core.enums import SimulationStatus
-from core.events import Event, EventBus, EventType, get_event_bus
+from core.events import EventBus, EventType, get_event_bus
 from core.exceptions import (
     SimulationAlreadyRunningError,
-    SimulationNotConfiguredError,
     SimulationNotRunningError,
     SimulationPausedError,
 )
@@ -59,7 +58,9 @@ class SimulationOrchestrator:
         self.event_bus = event_bus or get_event_bus()
         self.params: SimulationParameters = SimulationParameters()
         self.order_book: OrderBook = OrderBook()
-        self.matching_engine: MatchingEngine = MatchingEngine(self.order_book)
+        self.matching_engine: MatchingEngine = MatchingEngine(
+            self.order_book, event_bus=self.event_bus
+        )
         self.metrics: MetricsCollector = MetricsCollector()
         self.agents: list[BaseAgent] = []
 
@@ -196,7 +197,9 @@ class SimulationOrchestrator:
         self._current_step = 0
         self._paused = False
         self.order_book = OrderBook()
-        self.matching_engine = MatchingEngine(self.order_book)
+        self.matching_engine = MatchingEngine(
+            self.order_book, event_bus=self.event_bus
+        )
         self.metrics = MetricsCollector()
         self._start_time = None
         self._end_time = None
@@ -239,25 +242,9 @@ class SimulationOrchestrator:
         for agent in self.agents:
             order = agent.generate_order(self.order_book, self._current_step)
             if order is not None:
-                self.event_bus.emit(
-                    EventType.ORDER_PLACED,
-                    payload={"order_id": order.order_id, "agent_id": agent.agent_id},
-                    source="orchestrator",
-                )
                 trades = self.matching_engine.process_order(order)
                 for tr in trades:
                     agent.on_trade(tr.trade, tr.maker_order)
-                    self.event_bus.emit(
-                        EventType.TRADE_EXECUTED,
-                        payload={
-                            "trade_id": tr.trade.trade_id,
-                            "price": str(tr.trade.price),
-                            "quantity": tr.trade.quantity,
-                            "buyer": tr.trade.buyer_id,
-                            "seller": tr.trade.seller_id,
-                        },
-                        source="orchestrator",
-                    )
 
     def _record_metrics(self) -> None:
         """Record current order book state and trade data."""
@@ -277,7 +264,11 @@ class SimulationOrchestrator:
 
     def _finalize_run(self) -> None:
         """Clean up after a run completes or is stopped."""
-        self._status = SimulationStatus.COMPLETED if self._current_step >= self.params.total_steps else SimulationStatus.FAILED
+        self._status = (
+            SimulationStatus.COMPLETED
+            if self._current_step >= self.params.total_steps
+            else SimulationStatus.FAILED
+        )
         self._end_time = datetime.now(timezone.utc)
         final_metrics = self.metrics.compute(self.params.total_steps)
         self.event_bus.emit(

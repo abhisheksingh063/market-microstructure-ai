@@ -11,9 +11,17 @@ from decimal import Decimal
 from heapq import heapify, heappop, heappush
 from typing import Optional
 
-from core.constants import PRICE_LEVELS_CAPACITY_HINT
 from core.enums import OrderSide, OrderStatus, OrderType
-from core.exceptions import InvalidOrderError, InsufficientLiquidityError
+from core.events import (
+    EventBus,
+    EventType,
+    OrderCancelledPayload,
+    OrderFilledPayload,
+    OrderPartiallyFilledPayload,
+    OrderPlacedPayload,
+    TradeExecutedPayload,
+)
+from core.exceptions import InvalidOrderError
 from core.models import Level, Order, OrderBook, Trade, TradeResult
 
 
@@ -25,13 +33,34 @@ class MatchingEngine:
     Each Level contains a deque of individual Order objects.
     """
 
-    def __init__(self, order_book: OrderBook) -> None:
+    def __init__(
+        self,
+        order_book: OrderBook,
+        event_bus: Optional[EventBus] = None,
+    ) -> None:
         self.book = order_book
+        self.event_bus = event_bus
 
     def process_order(self, order: Order) -> list[TradeResult]:
         """Process an incoming order. Returns list of TradeResults."""
         self._validate(order)
         self.book.add_order(order)
+
+        if self.event_bus is not None:
+            self.event_bus.emit(
+                EventType.ORDER_PLACED,
+                payload=OrderPlacedPayload(
+                    order_id=order.order_id,
+                    agent_id=order.agent_id,
+                    side=order.side,
+                    order_type=order.order_type,
+                    price=order.price,
+                    quantity=order.quantity,
+                    simulation_id=order.simulation_id,
+                    timestamp=order.timestamp,
+                ),
+                source="matching_engine",
+            )
 
         if order.order_type == OrderType.MARKET:
             return self._match_market(order)
@@ -110,7 +139,8 @@ class MatchingEngine:
             self.book.trades.append(trade)
             trades.append(TradeResult(trade=trade, maker_order=maker, taker_order=order))
 
-            if maker.is_filled:
+            maker_filled = maker.is_filled
+            if maker_filled:
                 level.pop()
                 self.book.remove_order(maker.order_id)
 
@@ -118,6 +148,91 @@ class MatchingEngine:
                 heappop(levels)
             else:
                 levels[0] = (_key, level)
+
+            if self.event_bus is not None:
+                self.event_bus.emit(
+                    EventType.TRADE_EXECUTED,
+                    payload=TradeExecutedPayload(
+                        trade_id=trade.trade_id,
+                        buy_order_id=trade.buy_order_id,
+                        sell_order_id=trade.sell_order_id,
+                        buyer_id=trade.buyer_id,
+                        seller_id=trade.seller_id,
+                        price=trade.price,
+                        quantity=trade.quantity,
+                        simulation_id=trade.simulation_id,
+                        timestamp=trade.timestamp,
+                    ),
+                    source="matching_engine",
+                )
+
+                if maker_filled:
+                    self.event_bus.emit(
+                        EventType.ORDER_FILLED,
+                        payload=OrderFilledPayload(
+                            order_id=maker.order_id,
+                            agent_id=maker.agent_id,
+                            side=maker.side,
+                            quantity=maker.quantity,
+                            filled_quantity=maker.filled_quantity,
+                            price=maker.price,
+                            trade_id=trade.trade_id,
+                            simulation_id=maker.simulation_id,
+                            timestamp=trade.timestamp,
+                        ),
+                        source="matching_engine",
+                    )
+                else:
+                    self.event_bus.emit(
+                        EventType.ORDER_PARTIALLY_FILLED,
+                        payload=OrderPartiallyFilledPayload(
+                            order_id=maker.order_id,
+                            agent_id=maker.agent_id,
+                            side=maker.side,
+                            match_quantity=fill_qty,
+                            filled_quantity=maker.filled_quantity,
+                            remaining_quantity=maker.remaining,
+                            price=maker.price,
+                            trade_id=trade.trade_id,
+                            simulation_id=maker.simulation_id,
+                            timestamp=trade.timestamp,
+                        ),
+                        source="matching_engine",
+                    )
+
+                if order.is_filled:
+                    self.event_bus.emit(
+                        EventType.ORDER_FILLED,
+                        payload=OrderFilledPayload(
+                            order_id=order.order_id,
+                            agent_id=order.agent_id,
+                            side=order.side,
+                            quantity=order.quantity,
+                            filled_quantity=order.filled_quantity,
+                            price=order.price,
+                            trade_id=trade.trade_id,
+                            simulation_id=order.simulation_id,
+                            timestamp=trade.timestamp,
+                        ),
+                        source="matching_engine",
+                    )
+                else:
+                    self.event_bus.emit(
+                        EventType.ORDER_PARTIALLY_FILLED,
+                        payload=OrderPartiallyFilledPayload(
+                            order_id=order.order_id,
+                            agent_id=order.agent_id,
+                            side=order.side,
+                            match_quantity=fill_qty,
+                            filled_quantity=order.filled_quantity,
+                            remaining_quantity=order.remaining,
+                            price=order.price,
+                            trade_id=trade.trade_id,
+                            simulation_id=order.simulation_id,
+                            timestamp=trade.timestamp,
+                        ),
+                        source="matching_engine",
+                    )
 
         return trades
 
@@ -179,6 +294,20 @@ class MatchingEngine:
 
         if price is None:
             order.status = OrderStatus.CANCELLED
+            if self.event_bus is not None:
+                self.event_bus.emit(
+                    EventType.ORDER_CANCELLED,
+                    payload=OrderCancelledPayload(
+                        order_id=order.order_id,
+                        agent_id=order.agent_id,
+                        side=order.side,
+                        price=order.price,
+                        remaining_quantity=order.remaining,
+                        filled_quantity=order.filled_quantity,
+                        simulation_id=order.simulation_id,
+                    ),
+                    source="matching_engine",
+                )
             return order
 
         levels = self.book.bids if order.side == OrderSide.BUY else self.book.asks
@@ -191,4 +320,18 @@ class MatchingEngine:
                 break
 
         order.status = OrderStatus.CANCELLED
+        if self.event_bus is not None:
+            self.event_bus.emit(
+                EventType.ORDER_CANCELLED,
+                payload=OrderCancelledPayload(
+                    order_id=order.order_id,
+                    agent_id=order.agent_id,
+                    side=order.side,
+                    price=order.price,
+                    remaining_quantity=order.remaining,
+                    filled_quantity=order.filled_quantity,
+                    simulation_id=order.simulation_id,
+                ),
+                source="matching_engine",
+            )
         return order

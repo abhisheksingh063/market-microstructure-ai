@@ -9,10 +9,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from core.exceptions import EventBusError, EventHandlerError
+from core.enums import OrderSide, OrderType
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 class EventType(str, Enum):
     ORDER_PLACED = "order.placed"
-    ORDER_CANCELLED = "order.cancelled"
+    ORDER_PARTIALLY_FILLED = "order.partially_filled"
     ORDER_FILLED = "order.filled"
+    ORDER_CANCELLED = "order.cancelled"
     TRADE_EXECUTED = "trade.executed"
     SIMULATION_STARTED = "simulation.started"
     SIMULATION_STOPPED = "simulation.stopped"
@@ -41,7 +43,74 @@ class EventType(str, Enum):
     METRICS_UPDATED = "metrics.updated"
 
 
-# ── Event Payloads ──────────────────────────────────────────────
+# ── Typed Immutable Domain Event Payloads ───────────────────────
+
+
+@dataclass(frozen=True)
+class OrderPlacedPayload:
+    order_id: str
+    agent_id: str
+    side: OrderSide
+    order_type: OrderType
+    price: Optional[Decimal]
+    quantity: int
+    simulation_id: Optional[int] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(frozen=True)
+class OrderPartiallyFilledPayload:
+    order_id: str
+    agent_id: str
+    side: OrderSide
+    match_quantity: int
+    filled_quantity: int
+    remaining_quantity: int
+    price: Optional[Decimal]
+    trade_id: str
+    simulation_id: Optional[int] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(frozen=True)
+class OrderFilledPayload:
+    order_id: str
+    agent_id: str
+    side: OrderSide
+    quantity: int
+    filled_quantity: int
+    price: Optional[Decimal]
+    trade_id: str
+    simulation_id: Optional[int] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(frozen=True)
+class OrderCancelledPayload:
+    order_id: str
+    agent_id: str
+    side: OrderSide
+    price: Optional[Decimal]
+    remaining_quantity: int
+    filled_quantity: int
+    simulation_id: Optional[int] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(frozen=True)
+class TradeExecutedPayload:
+    trade_id: str
+    buy_order_id: str
+    sell_order_id: str
+    buyer_id: str
+    seller_id: str
+    price: Decimal
+    quantity: int
+    simulation_id: Optional[int] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ── Generic Event Wrapper ───────────────────────────────────────
 
 
 @dataclass
@@ -84,7 +153,9 @@ class EventBus:
     ) -> None:
         """Register a handler for an event type."""
         target = self._async_handlers if async_ else self._sync_handlers
-        target.setdefault(event_type, []).append(handler)
+        handlers = target.setdefault(event_type, [])
+        if handler not in handlers:
+            handlers.append(handler)
 
     def unsubscribe(
         self,
@@ -101,23 +172,32 @@ class EventBus:
     # ── publishing ────────────────────────────────────────────
 
     def publish(self, event: Event) -> None:
-        """Publish an event to all sync subscribers."""
-        for handler in self._sync_handlers.get(event.type, []):
+        """Publish an event to all sync subscribers with failure isolation."""
+        for handler in list(self._sync_handlers.get(event.type, [])):
             try:
                 handler(event)
             except Exception:
-                logger.exception("Sync handler failed for %s", event.type)
-                raise EventHandlerError(f"Handler failed for {event.type}") from None
+                logger.exception(
+                    "Sync handler %r failed for event %s (source=%s)",
+                    handler,
+                    event.type,
+                    event.source,
+                )
 
     async def publish_async(self, event: Event) -> None:
-        """Publish an event to all async subscribers."""
-        for handler in self._async_handlers.get(event.type, []):
+        """Publish an event to all async subscribers with failure isolation."""
+        for handler in list(self._async_handlers.get(event.type, [])):
             try:
                 result = handler(event)
                 if result is not None:
                     await result
             except Exception:
-                logger.exception("Async handler failed for %s", event.type)
+                logger.exception(
+                    "Async handler %r failed for event %s (source=%s)",
+                    handler,
+                    event.type,
+                    event.source,
+                )
 
     # ── convenience ───────────────────────────────────────────
 
@@ -125,7 +205,12 @@ class EventBus:
         """Synchronous publish with auto-created Event."""
         self.publish(Event(type=event_type, payload=payload, source=source))
 
-    async def emit_async(self, event_type: EventType, payload: Any = None, source: str = "") -> None:
+    async def emit_async(
+        self,
+        event_type: EventType,
+        payload: Any = None,
+        source: str = "",
+    ) -> None:
         """Async publish with auto-created Event."""
         await self.publish_async(Event(type=event_type, payload=payload, source=source))
 
@@ -147,3 +232,18 @@ _default_bus = EventBus()
 
 def get_event_bus() -> EventBus:
     return _default_bus
+
+
+__all__ = [
+    "EventType",
+    "Event",
+    "EventBus",
+    "SyncHandler",
+    "AsyncHandler",
+    "OrderPlacedPayload",
+    "OrderPartiallyFilledPayload",
+    "OrderFilledPayload",
+    "OrderCancelledPayload",
+    "TradeExecutedPayload",
+    "get_event_bus",
+]

@@ -9,12 +9,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.enums import AgentType, SimulationStatus
+from core.enums import SimulationStatus
 from database.base import Base
-
 
 # ── Simulation Runs ────────────────────────────────────────────────
 
@@ -52,6 +51,9 @@ class SimulationORM(Base):
         back_populates="simulation", cascade="all, delete-orphan"
     )
     evaluation_results: Mapped[list[EvaluationResultORM]] = relationship(
+        back_populates="simulation", cascade="all, delete-orphan"
+    )
+    price_history: Mapped[list[PriceHistoryORM]] = relationship(
         back_populates="simulation", cascade="all, delete-orphan"
     )
 
@@ -247,3 +249,34 @@ class OrderBookSnapshotORM(Base):
     )
 
     simulation: Mapped[SimulationORM] = relationship()
+
+
+# ── Price History ──────────────────────────────────────────────────
+
+
+class PriceHistoryORM(Base):
+    __tablename__ = "price_history"
+    __table_args__ = (
+        Index("ix_price_history_sim_time", "simulation_id", "timestamp"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    simulation_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("simulations.id", ondelete="CASCADE"), index=True
+    )
+    trade_id: Mapped[str] = mapped_column(String(64), index=True)
+    price: Mapped[float] = mapped_column(Float)
+    quantity: Mapped[int] = mapped_column(Integer)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    # Relationships
+    simulation: Mapped[SimulationORM] = relationship(back_populates="price_history")
+
+    def __repr__(self) -> str:
+        return f"<PriceHistoryORM sim={self.simulation_id} {self.quantity}@{self.price}>"
+

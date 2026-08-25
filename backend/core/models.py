@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Iterator, Optional
+from typing import Optional
 
 from .constants import MAX_ORDER_PRICE, MIN_ORDER_PRICE, ORDER_ID_LENGTH
 from .enums import OrderSide, OrderStatus, OrderType
@@ -102,6 +103,15 @@ class TradeResult:
     trade: Trade
     maker_order: Order
     taker_order: Order
+
+
+@dataclass(frozen=True)
+class PriceObservation:
+    simulation_id: Optional[int] = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    price: Decimal = Decimal("0")
+    quantity: int = 0
+    trade_id: str = ""
 
 
 class Level:
@@ -232,10 +242,22 @@ class OrderBook:
             "bids": [
                 {"price": str(l.price), "quantity": l.quantity, "order_count": l.order_count}
                 for _, l in self.bids[:levels]
+                {
+                    "price": str(lvl.price),
+                    "quantity": lvl.quantity,
+                    "order_count": lvl.order_count,
+                }
+                for _, lvl in self.bids[:levels]
             ],
             "asks": [
                 {"price": str(l.price), "quantity": l.quantity, "order_count": l.order_count}
                 for _, l in self.asks[:levels]
+                {
+                    "price": str(lvl.price),
+                    "quantity": lvl.quantity,
+                    "order_count": lvl.order_count,
+                }
+                for _, lvl in self.asks[:levels]
             ],
         }
 

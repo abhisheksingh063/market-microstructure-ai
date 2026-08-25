@@ -19,6 +19,7 @@ from database.repository import (
     AgentRepository,
     EvaluationResultRepository,
     OrderRepository,
+    PriceHistoryRepository,
     SimulationRepository,
     SnapshotRepository,
     TradeRepository,
@@ -79,6 +80,12 @@ async def get_evaluation_result_repo(
 
 async def get_snapshot_repo(session: AsyncSession = Depends(get_db)) -> SnapshotRepository:
     return SnapshotRepository(session)
+
+
+async def get_price_history_repo(
+    session: AsyncSession = Depends(get_db),
+) -> PriceHistoryRepository:
+    return PriceHistoryRepository(session)
 
 
 # ── Simulation ────────────────────────────────────────────────────

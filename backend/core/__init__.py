@@ -32,6 +32,7 @@ from .exceptions import (
     WebSocketError,
 )
 from .models import Order, Trade, OrderBook, Level, TradeResult
+from .models import Level, Order, OrderBook, PriceObservation, Trade, TradeResult
 
 __all__ = [
     "Order",
@@ -39,6 +40,7 @@ __all__ = [
     "OrderBook",
     "Level",
     "TradeResult",
+    "PriceObservation",
     "OrderSide",
     "OrderType",
     "OrderStatus",

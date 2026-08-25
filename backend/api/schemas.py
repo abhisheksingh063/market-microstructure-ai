@@ -178,3 +178,19 @@ class EvaluationResultResponse(BaseModel):
     latency_ms: Optional[float] = None
     sharpe_ratio: Optional[float] = None
     created_at: datetime
+
+
+# ── Price History ───────────────────────────────────────────────────
+
+
+class PriceHistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    simulation_id: int
+    trade_id: str
+    price: float
+    quantity: int
+    timestamp: datetime
+    created_at: datetime
+

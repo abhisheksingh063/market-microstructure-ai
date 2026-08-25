@@ -10,6 +10,7 @@ import asyncio
 import json
 import uuid
 from dataclasses import asdict
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -20,6 +21,7 @@ from api.schemas import (
     EvaluationResultResponse,
     OrderCreate,
     OrderResponse,
+    PriceHistoryResponse,
     SimulationCreate,
     SimulationResponse,
     TradeResponse,
@@ -29,6 +31,7 @@ from app.dependencies import (
     get_agent_repo,
     get_evaluation_result_repo,
     get_order_repo,
+    get_price_history_repo,
     get_simulation_repo,
     get_trade_repo,
     get_training_log_repo,
@@ -38,12 +41,15 @@ from core.constants import ORDER_ID_LENGTH
 from core.enums import OrderStatus, SimulationStatus
 from core.logging import get_logger
 from core.models import Trade
+from core.models import PriceObservation, Trade
 from database.database import get_db_session
 from database.models import AgentORM, OrderORM, TradeORM
+from database.models import AgentORM, OrderORM, PriceHistoryORM, TradeORM
 from database.repository import (
     AgentRepository,
     EvaluationResultRepository,
     OrderRepository,
+    PriceHistoryRepository,
     SimulationRepository,
     TradeRepository,
     TrainingLogRepository,
@@ -182,6 +188,7 @@ async def _run_simulation(orchestrator: SimulationOrchestrator, sim_id: int) -> 
             json.dumps(asdict(final_metrics), default=str),
         )
         await _persist_trades(sim_id, orchestrator.order_book.trades)
+        await _persist_price_history(sim_id, orchestrator.price_history.get_history())
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -227,6 +234,29 @@ async def _persist_trades(sim_id: int, trades: list[Trade]) -> None:
                 for trade in trades
             ]
         )
+
+
+async def _persist_price_history(
+    sim_id: int, observations: list[PriceObservation]
+) -> None:
+    """Persist price history observations for a completed simulation."""
+    if not observations:
+        return
+    async for session in get_db_session():
+        repo = PriceHistoryRepository(session)
+        await repo.save_many(
+            [
+                PriceHistoryORM(
+                    simulation_id=sim_id,
+                    trade_id=obs.trade_id,
+                    price=float(obs.price),
+                    quantity=obs.quantity,
+                    timestamp=obs.timestamp,
+                )
+                for obs in observations
+            ]
+        )
+
 
 
 # ── Order Book ──────────────────────────────────────────────────────
@@ -422,3 +452,34 @@ async def get_simulation_evaluation(
 ):
     await sim_repo.get_by_id(simulation_id)  # 404 if simulation missing
     return await eval_repo.get_by_simulation(simulation_id)
+
+
+# ── Price History ───────────────────────────────────────────────────
+
+
+@router.get(
+    "/price-history",
+    response_model=list[PriceHistoryResponse],
+    tags=["price-history"],
+)
+async def list_price_history(
+    simulation_id: Optional[int] = Query(default=None),
+    start_time: Optional[datetime] = Query(default=None),
+    end_time: Optional[datetime] = Query(default=None),
+    page: tuple[int, int] = Depends(_page_params),
+    price_history_repo: PriceHistoryRepository = Depends(get_price_history_repo),
+    sim_repo: SimulationRepository = Depends(get_simulation_repo),
+):
+    limit, offset = page
+    if simulation_id is not None:
+        await sim_repo.get_by_id(simulation_id)  # 404 if simulation missing
+        return await price_history_repo.get_history(
+            simulation_id=simulation_id,
+            limit=limit,
+            start_time=start_time,
+            end_time=end_time,
+        )
+    return await price_history_repo.list_all(
+        simulation_id=simulation_id, limit=limit, offset=offset
+    )
+

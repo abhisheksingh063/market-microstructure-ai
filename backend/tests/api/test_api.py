@@ -17,6 +17,7 @@ from app.dependencies import (
     get_order_repo,
     get_simulation_repo,
     get_trade_repo,
+    get_price_history_repo,
     get_training_log_repo,
 )
 from app.main import app
@@ -25,6 +26,7 @@ from database.repository import (
     AgentRepository,
     EvaluationResultRepository,
     OrderRepository,
+    PriceHistoryRepository,
     SimulationRepository,
     TradeRepository,
     TrainingLogRepository,
@@ -37,6 +39,7 @@ REPO_OVERRIDES = [
     (get_agent_repo, AgentRepository),
     (get_training_log_repo, TrainingLogRepository),
     (get_evaluation_result_repo, EvaluationResultRepository),
+    (get_price_history_repo, PriceHistoryRepository),
 ]
 
 

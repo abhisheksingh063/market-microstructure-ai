@@ -194,3 +194,21 @@ class PriceHistoryResponse(BaseModel):
     timestamp: datetime
     created_at: datetime
 
+
+# ── Analytics / OHLCV ───────────────────────────────────────────────
+
+
+class OHLCVResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    simulation_id: Optional[int] = None
+    start_time: datetime
+    end_time: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    trade_count: int
+
+

@@ -28,6 +28,7 @@ from core.exceptions import (
     SimulationPausedError,
 )
 from core.models import OrderBook
+from core.price_history import PriceHistory
 from evaluation.metrics import MetricsCollector
 from matching.engine import MatchingEngine
 
@@ -61,6 +62,7 @@ class SimulationOrchestrator:
         self.matching_engine: MatchingEngine = MatchingEngine(
             self.order_book, event_bus=self.event_bus
         )
+        self.price_history: PriceHistory = PriceHistory(self.event_bus)
         self.metrics: MetricsCollector = MetricsCollector()
         self.agents: list[BaseAgent] = []
 
@@ -200,6 +202,7 @@ class SimulationOrchestrator:
         self.matching_engine = MatchingEngine(
             self.order_book, event_bus=self.event_bus
         )
+        self.price_history.clear()
         self.metrics = MetricsCollector()
         self._start_time = None
         self._end_time = None

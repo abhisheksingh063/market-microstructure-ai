@@ -163,6 +163,17 @@ class WebSocketError(APIError):
     """WebSocket connection or message error."""
 
 
+# ── Analytics ────────────────────────────────────────────────────────
+
+
+class AnalyticsError(SimulatorError):
+    """Base exception for analytics and metric calculation errors."""
+
+
+class InvalidIntervalError(AnalyticsError):
+    """Provided candle/aggregation time interval is invalid."""
+
+
 __all__ = [
     "SimulatorError",
     "OrderError",
@@ -196,4 +207,6 @@ __all__ = [
     "EventHandlerError",
     "APIError",
     "WebSocketError",
+    "AnalyticsError",
+    "InvalidIntervalError",
 ]

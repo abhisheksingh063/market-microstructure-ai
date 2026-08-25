@@ -13,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 import api.router as router
-from core.models import Order, OrderBook, OrderSide, OrderType, Trade
+from core.models import Order, OrderBook, OrderSide, OrderType, PriceObservation, Trade
+from core.price_history import PriceHistory
 from database.models import Base, SimulationORM
-from database.repository import SimulationRepository, TradeRepository
+from database.repository import PriceHistoryRepository, SimulationRepository, TradeRepository
 from evaluation.metrics import MetricsCollector
 from matching.engine import MatchingEngine
 from simulation.orchestrator import SimulationParameters
@@ -28,6 +29,17 @@ class _FakeOrchestrator:
         self.params = SimulationParameters(total_steps=total_steps)
         self.order_book = OrderBook()
         self.order_book.trades = trades
+        self.price_history = PriceHistory()
+        for t in trades:
+            self.price_history._history.append(
+                PriceObservation(
+                    simulation_id=None,
+                    timestamp=t.timestamp,
+                    price=t.price,
+                    quantity=t.quantity,
+                    trade_id=t.trade_id,
+                )
+            )
         self.metrics = MetricsCollector()
 
     async def start_async(self) -> None:
@@ -105,6 +117,14 @@ async def test_persists_trades_from_completed_run(db_session):
     assert stored_trade.quantity == trades[0].quantity
     assert stored_trade.buyer_id == "buyer"
     assert stored_trade.seller_id == "seller"
+
+    ph_repo = PriceHistoryRepository(db_session)
+    stored_ph = await ph_repo.get_history(sim.id)
+    assert len(stored_ph) == 1
+    assert stored_ph[0].trade_id == trades[0].trade_id
+    assert stored_ph[0].simulation_id == sim.id
+    assert stored_ph[0].price == float(trades[0].price)
+    assert stored_ph[0].quantity == trades[0].quantity
 
 
 async def test_run_without_trades_persists_nothing(db_session):

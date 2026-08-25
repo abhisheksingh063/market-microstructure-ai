@@ -11,6 +11,7 @@ import json
 import uuid
 from dataclasses import asdict
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -19,6 +20,7 @@ from api.schemas import (
     AgentCreate,
     AgentResponse,
     EvaluationResultResponse,
+    OHLCVResponse,
     OrderCreate,
     OrderResponse,
     PriceHistoryResponse,
@@ -36,9 +38,11 @@ from app.dependencies import (
     get_trade_repo,
     get_training_log_repo,
 )
+from core.analytics import MarketAnalytics, parse_interval_seconds
 from core.config import settings
 from core.constants import ORDER_ID_LENGTH
 from core.enums import OrderStatus, SimulationStatus
+from core.exceptions import InvalidIntervalError
 from core.logging import get_logger
 from core.models import Trade
 from core.models import PriceObservation, Trade
@@ -482,4 +486,74 @@ async def list_price_history(
     return await price_history_repo.list_all(
         simulation_id=simulation_id, limit=limit, offset=offset
     )
+
+
+# ── Analytics / OHLCV ───────────────────────────────────────────────
+
+
+@router.get(
+    "/analytics/ohlcv",
+    response_model=list[OHLCVResponse],
+    tags=["analytics"],
+)
+async def get_ohlcv(
+    simulation_id: Optional[int] = Query(default=None),
+    interval: str = Query(default="1m", description="Candle interval (e.g. 1m, 5m, 15m, 1h)"),
+    start_time: Optional[datetime] = Query(default=None),
+    end_time: Optional[datetime] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=1, le=1000),
+    price_history_repo: PriceHistoryRepository = Depends(get_price_history_repo),
+    sim_repo: SimulationRepository = Depends(get_simulation_repo),
+):
+    if start_time is not None and end_time is not None and start_time > end_time:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="start_time must be before or equal to end_time",
+        )
+
+    try:
+        parsed_interval = parse_interval_seconds(interval)
+    except (InvalidIntervalError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid interval '{interval}': {exc}",
+        )
+
+    if simulation_id is not None:
+        await sim_repo.get_by_id(simulation_id)  # 404 if simulation missing
+        records = await price_history_repo.get_history(
+            simulation_id=simulation_id,
+            start_time=start_time,
+            end_time=end_time,
+        )
+    else:
+        records = await price_history_repo.list_all(
+            simulation_id=None,
+            limit=10000,
+        )
+        if start_time is not None:
+            records = [r for r in records if r.timestamp >= start_time]
+        if end_time is not None:
+            records = [r for r in records if r.timestamp <= end_time]
+
+    observations = [
+        PriceObservation(
+            simulation_id=r.simulation_id,
+            timestamp=r.timestamp,
+            price=Decimal(str(r.price)),
+            quantity=r.quantity,
+            trade_id=r.trade_id,
+        )
+        for r in records
+    ]
+
+    return MarketAnalytics.generate_candles(
+        observations=observations,
+        interval=parsed_interval,
+        simulation_id=simulation_id,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+    )
+
 

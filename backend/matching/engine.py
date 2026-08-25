@@ -246,9 +246,15 @@ class MatchingEngine:
 
     @staticmethod
     def _create_trade(taker: Order, maker: Order, quantity: int) -> Trade:
+        sim_id = (
+            taker.simulation_id
+            if taker.simulation_id is not None
+            else maker.simulation_id
+        )
         return Trade(
             buy_order_id=taker.order_id if taker.side == OrderSide.BUY else maker.order_id,
             sell_order_id=taker.order_id if taker.side == OrderSide.SELL else maker.order_id,
+            simulation_id=sim_id,
             price=maker.price or taker.price or Decimal("0"),
             quantity=quantity,
             buyer_id=taker.agent_id if taker.side == OrderSide.BUY else maker.agent_id,

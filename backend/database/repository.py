@@ -21,6 +21,7 @@ from database.models import (
     EvaluationResultORM,
     OrderBookSnapshotORM,
     OrderORM,
+    PriceHistoryORM,
     SimulationORM,
     TradeORM,
     TrainingLogORM,
@@ -357,3 +358,57 @@ class SnapshotRepository(BaseRepository):
             stmt = stmt.where(OrderBookSnapshotORM.step == step)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+
+# ── Price History Repository ────────────────────────────────────────
+
+
+class PriceHistoryRepository(BaseRepository):
+    async def save(self, record: PriceHistoryORM) -> PriceHistoryORM:
+        self._session.add(record)
+        await self.commit()
+        return record
+
+    async def save_many(self, records: list[PriceHistoryORM]) -> None:
+        self._session.add_all(records)
+        await self.commit()
+
+    async def get_history(
+        self,
+        simulation_id: int,
+        limit: Optional[int] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> list[PriceHistoryORM]:
+        stmt = (
+            select(PriceHistoryORM)
+            .where(PriceHistoryORM.simulation_id == simulation_id)
+            .order_by(PriceHistoryORM.timestamp.asc(), PriceHistoryORM.id.asc())
+        )
+        if start_time is not None:
+            stmt = stmt.where(PriceHistoryORM.timestamp >= start_time)
+        if end_time is not None:
+            stmt = stmt.where(PriceHistoryORM.timestamp <= end_time)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_all(
+        self,
+        simulation_id: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[PriceHistoryORM]:
+        stmt = (
+            select(PriceHistoryORM)
+            .order_by(PriceHistoryORM.timestamp.asc(), PriceHistoryORM.id.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        if simulation_id is not None:
+            stmt = stmt.where(PriceHistoryORM.simulation_id == simulation_id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+

@@ -263,3 +263,4 @@ __all__ = [
     "parse_interval_seconds",
     "MarketAnalytics",
 ]
+

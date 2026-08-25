@@ -23,6 +23,7 @@ class OrderStatus(str, enum.Enum):
 
 class AgentType(str, enum.Enum):
     RANDOM = "random"
+    NOISE = "noise"
     MARKET_MAKER = "market_maker"
     MOMENTUM = "momentum"
     MEAN_REVERSION = "mean_reversion"

@@ -44,10 +44,8 @@ from core.constants import ORDER_ID_LENGTH
 from core.enums import OrderStatus, SimulationStatus
 from core.exceptions import InvalidIntervalError
 from core.logging import get_logger
-from core.models import Trade
 from core.models import PriceObservation, Trade
 from database.database import get_db_session
-from database.models import AgentORM, OrderORM, TradeORM
 from database.models import AgentORM, OrderORM, PriceHistoryORM, TradeORM
 from database.repository import (
     AgentRepository,

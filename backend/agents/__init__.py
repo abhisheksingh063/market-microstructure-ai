@@ -1,5 +1,6 @@
 from .base import BaseAgent
 from .market_maker import MarketMaker
+from .momentum_trader import MomentumTrader, MomentumTraderConfig
 from .noise_trader import NoiseTrader, NoiseTraderConfig
 from .random_agent import RandomAgent
 
@@ -9,5 +10,8 @@ __all__ = [
     "MarketMaker",
     "NoiseTrader",
     "NoiseTraderConfig",
+    "MomentumTrader",
+    "MomentumTraderConfig",
 ]
+
 

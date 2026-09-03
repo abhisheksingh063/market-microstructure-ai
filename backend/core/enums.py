@@ -27,6 +27,7 @@ class AgentType(str, enum.Enum):
     MARKET_MAKER = "market_maker"
     MOMENTUM = "momentum"
     MEAN_REVERSION = "mean_reversion"
+    INFORMED = "informed"
     RL = "rl"
 
 

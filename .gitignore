@@ -29,3 +29,7 @@ Thumbs.db
 
 # Docker
 docker/.env
+
+# RL Model Artifacts and Checkpoints
+artifacts/
+*.zip

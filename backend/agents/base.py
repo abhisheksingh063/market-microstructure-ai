@@ -27,7 +27,7 @@ class BaseAgent(ABC):
         sign = 1 if order.side.value == "sell" else -1
         self.position += sign * trade.quantity
 
-    def reset(self) -> None:
+    def reset(self, seed: Optional[int] = None) -> None:
         """Reset agent state for a new simulation."""
         self.cash = 100_000.0
         self.position = 0

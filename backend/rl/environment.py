@@ -91,6 +91,7 @@ class ExecutionEnvConfig:
     state_config: Optional[StateConfig] = None
     action_config: Optional[ActionConfig] = None
     reward_config: Optional[RewardConfig] = None
+    dynamic_episode_seeds: bool = False
 
 
 class ExecutionEnv(gym.Env):
@@ -153,6 +154,7 @@ class ExecutionEnv(gym.Env):
         self.reward_calculator = RewardCalculator(self.config.reward_config)
 
         self.current_step = 0
+        self._episode_count = 0
         self.agent = ExecutionAgent(
             agent_id="rl_agent",
             name="RL Execution Agent",
@@ -191,7 +193,6 @@ class ExecutionEnv(gym.Env):
             self._background_agents = [copy.copy(a) for a in self.config.background_agents]
             for a in self._background_agents:
                 self.scheduler.register(a, interval=self.config.step_interval)
-
     # ── Gymnasium Lifecycle ────────────────────────────────────
 
     def reset(
@@ -207,7 +208,15 @@ class ExecutionEnv(gym.Env):
         """
         super().reset(seed=seed)
 
-        effective_seed = seed if seed is not None else self.config.seed
+        if seed is not None:
+            effective_seed = seed
+            self._episode_count = 0
+        elif self.config.dynamic_episode_seeds and self.config.seed is not None:
+            effective_seed = self.config.seed + self._episode_count
+            self._episode_count += 1
+        else:
+            effective_seed = self.config.seed
+
         if effective_seed is not None:
             self.np_random, _ = gym.utils.seeding.np_random(effective_seed)
 
@@ -219,8 +228,9 @@ class ExecutionEnv(gym.Env):
         self.current_step = 0
 
         # Reset background agents if any
-        for a in self._background_agents:
-            a.reset()
+        for idx, a in enumerate(self._background_agents):
+            agent_seed = effective_seed + idx if effective_seed is not None else None
+            a.reset(seed=agent_seed)
 
         obs = self._get_observation()
         info = self._get_info()

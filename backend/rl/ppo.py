@@ -32,6 +32,8 @@ class PPOConfig:
     seed: Optional[int] = None
     device: str = "auto"
     verbose: int = 0
+    net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None
+    policy_kwargs: Optional[dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         if self.learning_rate <= 0:
@@ -58,6 +60,26 @@ class PPOConfig:
             raise ValueError(f"vf_coef must be non-negative, got {self.vf_coef}")
         if self.max_grad_norm <= 0:
             raise ValueError(f"max_grad_norm must be positive, got {self.max_grad_norm}")
+        if self.net_arch is not None:
+            if isinstance(self.net_arch, list):
+                if len(self.net_arch) == 0:
+                    raise ValueError("net_arch list cannot be empty")
+                if not all(isinstance(layer, int) and layer > 0 for layer in self.net_arch):
+                    raise ValueError(
+                        f"net_arch layers must be positive integers, got {self.net_arch}"
+                    )
+            elif isinstance(self.net_arch, dict):
+                for key in ("pi", "vf"):
+                    if key in self.net_arch:
+                        val = self.net_arch[key]
+                        if not isinstance(val, list) or not all(
+                            isinstance(layer, int) and layer > 0 for layer in val
+                        ):
+                            raise ValueError(
+                                f"net_arch['{key}'] must be a list of positive integers, got {val}"
+                            )
+            else:
+                raise TypeError(f"net_arch must be a list or dict, got {type(self.net_arch)}")
 
 
 class PPOAgent:
@@ -80,6 +102,13 @@ class PPOAgent:
         else:
             if env is None:
                 raise ValueError("Environment must be provided to initialize PPOAgent")
+
+            resolved_policy_kwargs = dict(self.config.policy_kwargs or {})
+            if self.config.net_arch is not None:
+                resolved_policy_kwargs["net_arch"] = self.config.net_arch
+            if "policy_kwargs" in kwargs:
+                resolved_policy_kwargs.update(kwargs.pop("policy_kwargs"))
+
             self.model = PPO(
                 policy=self.policy,
                 env=self.env,
@@ -96,6 +125,7 @@ class PPOAgent:
                 seed=self.config.seed,
                 device=self.config.device,
                 verbose=self.config.verbose,
+                policy_kwargs=resolved_policy_kwargs if resolved_policy_kwargs else None,
                 **kwargs,
             )
 

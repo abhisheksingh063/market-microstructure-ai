@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
+import gymnasium as gym
 import numpy as np
 import torch
 from stable_baselines3.common.callbacks import BaseCallback
@@ -31,6 +32,44 @@ from stable_baselines3.common.callbacks import BaseCallback
 from agents.market_maker import MarketMaker, MarketMakerConfig
 from rl.environment import ExecutionEnv, ExecutionEnvConfig
 from rl.ppo import PPOAgent, PPOConfig
+
+
+class EpisodeSeedWrapper(gym.Wrapper):
+    """Gym wrapper that seeds the underlying environment dynamically on parameterless resets.
+
+    During SB3 training rollouts, `env.reset()` is invoked without arguments. If the underlying
+    environment's config has a fixed seed, parameterless reset will re-seed background agents
+    to the identical state, causing the policy to see the exact same market condition repeatedly.
+
+    This wrapper intercepts parameterless `reset()` calls and supplies an advancing seed:
+    `seed = self.base_seed + self.episode_count`. Explicit seeds passed into `reset(seed=...)`
+    are honored directly.
+    """
+
+    def __init__(self, env: gym.Env, base_seed: int = 42) -> None:
+        super().__init__(env)
+        self.base_seed = int(base_seed)
+        self.episode_count = 0
+
+    def reset(
+        self,
+        *,
+        seed: Optional[int] = None,
+        options: Optional[dict[str, Any]] = None,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        """Reset environment with an advancing seed if none is specified."""
+        if seed is None:
+            effective_seed = self.base_seed + self.episode_count
+            self.episode_count += 1
+        else:
+            effective_seed = seed
+        return self.env.reset(seed=effective_seed, options=options)
+
+    def reset_episode_counter(self, base_seed: Optional[int] = None) -> None:
+        """Reset the internal episode counter to zero, optionally updating base_seed."""
+        self.episode_count = 0
+        if base_seed is not None:
+            self.base_seed = int(base_seed)
 
 
 @dataclass
@@ -52,6 +91,7 @@ class TrainingConfig:
     target_metric: str = "mean_reward"
     save_best_model: bool = True
     early_stopping_patience: Optional[int] = None
+    dynamic_episode_seeds: bool = False
     ppo_config: Optional[PPOConfig] = None
     env_config: Optional[ExecutionEnvConfig] = None
 
@@ -325,7 +365,7 @@ class PPOTrainer:
     def __init__(
         self,
         config: Optional[TrainingConfig] = None,
-        env: Optional[ExecutionEnv] = None,
+        env: Optional[Union[gym.Env, ExecutionEnv]] = None,
         eval_env: Optional[ExecutionEnv] = None,
         agent: Optional[PPOAgent] = None,
     ) -> None:
@@ -400,6 +440,7 @@ class PPOTrainer:
             state_config=base_config.state_config,
             action_config=base_config.action_config,
             reward_config=base_config.reward_config,
+            dynamic_episode_seeds=config.dynamic_episode_seeds,
         )
 
         eval_env_config = ExecutionEnvConfig(
@@ -513,7 +554,7 @@ class PPOTrainer:
 
 def train_ppo(
     config: Optional[TrainingConfig] = None,
-    env: Optional[ExecutionEnv] = None,
+    env: Optional[Union[gym.Env, ExecutionEnv]] = None,
     eval_env: Optional[ExecutionEnv] = None,
     agent: Optional[PPOAgent] = None,
 ) -> tuple[PPOAgent, TrainingDiagnostics]:
@@ -523,6 +564,7 @@ def train_ppo(
 
 
 __all__ = [
+    "EpisodeSeedWrapper",
     "TrainingConfig",
     "EpisodeRecord",
     "EvalRecord",

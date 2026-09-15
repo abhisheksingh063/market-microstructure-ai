@@ -44,8 +44,10 @@ import numpy as np
 import pytest
 from gymnasium.utils.env_checker import check_env
 
+from agents.market_maker import MarketMaker, MarketMakerConfig
+from agents.noise_trader import NoiseTrader, NoiseTraderConfig
 from rl.actions import ActionType
-from rl.environment import ExecutionEnv
+from rl.environment import ExecutionEnv, ExecutionEnvConfig
 from rl.evaluation import (
     EpisodeEvaluation,
     EvaluationConfig,
@@ -414,6 +416,76 @@ class TestPPOEvaluationAndEnvironment:
             assert res_policy.mean_reward == res_model.mean_reward
             assert res_policy.mean_shortfall == res_model.mean_shortfall
             assert res_policy.target_completion_rate == res_model.target_completion_rate
+
+    def test_background_agent_reseeding_across_episodes(self):
+        env = create_evaluation_env(seed=42)
+        env.reset(seed=42)
+        env.step(0)
+        ask_qty_42 = env.order_book.asks[0][1].quantity
+
+        env.reset(seed=43)
+        env.step(0)
+        ask_qty_43 = env.order_book.asks[0][1].quantity
+
+        assert ask_qty_42 != ask_qty_43
+        assert env._background_agents[0]._seed == 43
+
+    def test_different_seeds_produce_different_trajectories_with_dynamic_agents(self):
+        mm = MarketMaker("mm", config=MarketMakerConfig(seed=42))
+        nt = NoiseTrader("nt", config=NoiseTraderConfig(seed=42))
+        env = ExecutionEnv(
+            config=ExecutionEnvConfig(
+                target_inventory=10,
+                background_agents=[mm, nt],
+            )
+        )
+        res = evaluate_policy(
+            RuleBasedBaselinePolicy(),
+            env=env,
+            episodes=5,
+            base_seed=42,
+        )
+        rewards = [ep.total_reward for ep in res.episodes]
+        assert len(set(rewards)) > 1
+        assert res.std_reward > 0.0
+
+    def test_environment_state_fully_reset_between_episodes(self):
+        env = create_evaluation_env(seed=42)
+        env.reset(seed=42)
+
+        for _ in range(5):
+            env.step(int(ActionType.MARKET_BUY))
+
+        assert env.agent.position > 0
+        assert env.agent.total_trades > 0
+        assert env.agent.cash < 100_000.0
+
+        obs, info = env.reset(seed=99)
+        assert env.agent.position == 0
+        assert env.agent.total_trades == 0
+        assert env.agent.cash == 100_000.0
+        assert env.current_step == 0
+        assert env.clock.now() == env.config.start_time
+        assert env.order_book.best_bid is None
+        assert env.order_book.best_ask is None
+        assert len(env.order_book.bids) == 0
+        assert len(env.order_book.asks) == 0
+
+    def test_policy_state_isolation_between_episodes(self):
+        env = create_evaluation_env(seed=42)
+        policy = RuleBasedBaselinePolicy()
+
+        res_multi = evaluate_policy(policy, env=env, episodes=2, base_seed=100)
+
+        env_single = create_evaluation_env(seed=42)
+        res_single = evaluate_policy(policy, env=env_single, episodes=1, base_seed=101)
+
+        assert res_multi.episodes[1].total_reward == res_single.episodes[0].total_reward
+        assert (
+            res_multi.episodes[1].final_inventory
+            == res_single.episodes[0].final_inventory
+        )
+        assert res_multi.episodes[1].final_cash == res_single.episodes[0].final_cash
 
 
 class TestPolicyComparisonAndMetrics:

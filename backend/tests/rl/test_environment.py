@@ -19,15 +19,22 @@ Tests verify:
 
 from __future__ import annotations
 
+import random
 from decimal import Decimal
+from typing import Optional
 
 import gymnasium as gym
 import numpy as np
 import pytest
 from gymnasium.utils.env_checker import check_env
 
+from agents.base import BaseAgent
+from agents.informed_trader import InformedTrader, InformedTraderConfig
 from agents.market_maker import MarketMaker, MarketMakerConfig
+from agents.mean_reversion_trader import MeanReversionTrader, MeanReversionTraderConfig
+from agents.momentum_trader import MomentumTrader, MomentumTraderConfig
 from agents.noise_trader import NoiseTrader, NoiseTraderConfig
+from agents.random_agent import RandomAgent
 from core.models import Order, OrderSide, OrderType
 from rl.actions import ActionConfig, ActionSpaceType
 from rl.environment import (
@@ -368,3 +375,135 @@ class TestSimulationComponentsAndIsolation:
         env = ExecutionEnv()
         # Official Gymnasium environment validation
         check_env(env)
+
+
+class TestBackgroundAgentReseedingAndGeneralization:
+    """Verifies that background agent reseeding is properly generalized across all
+
+    agent types without relying specifically on MarketMaker having a private _seed.
+    """
+
+    def test_all_existing_agent_types_polymorphic_reseeding(self):
+        """Verify that all 6 existing background agent types are deterministically
+
+        reseeded via ExecutionEnv.reset(seed=...).
+        """
+        mm = MarketMaker(
+            agent_id="mm_test",
+            config=MarketMakerConfig(default_price=Decimal("100.00"), spread=Decimal("0.50")),
+        )
+        nt = NoiseTrader(
+            agent_id="nt_test",
+            config=NoiseTraderConfig(
+                default_price=Decimal("100.00"), min_quantity=1, max_quantity=5
+            ),
+        )
+        it = InformedTrader(
+            agent_id="it_test",
+            config=InformedTraderConfig(
+                fair_value=Decimal("102.00"), default_price=Decimal("100.00")
+            ),
+        )
+        mrt = MeanReversionTrader(
+            agent_id="mrt_test",
+            config=MeanReversionTraderConfig(lookback=5, default_price=Decimal("100.00")),
+        )
+        mom = MomentumTrader(
+            agent_id="mom_test",
+            config=MomentumTraderConfig(lookback=5, default_price=Decimal("100.00")),
+        )
+        rnd = RandomAgent(agent_id="rnd_test")
+
+        agents = [mm, nt, it, mrt, mom, rnd]
+
+        env = ExecutionEnv(
+            config=ExecutionEnvConfig(
+                background_agents=agents,
+                max_steps=10,
+            )
+        )
+
+        # 1. First run with seed=100
+        env.reset(seed=100)
+        env.step(0)
+        rng_states_run1 = [a.rng.getstate() for a in env._background_agents]
+        best_bid_100 = env.order_book.best_bid
+        best_ask_100 = env.order_book.best_ask
+
+        # 2. Second run with seed=200 (different seed)
+        env.reset(seed=200)
+        env.step(0)
+        rng_states_run2 = [a.rng.getstate() for a in env._background_agents]
+        # At least one agent RNG state should differ between seed 100 and seed 200
+        assert any(s1 != s2 for s1, s2 in zip(rng_states_run1, rng_states_run2))
+
+        # 3. Third run resetting back to seed=100
+        env.reset(seed=100)
+        env.step(0)
+        rng_states_run3 = [a.rng.getstate() for a in env._background_agents]
+        best_bid_100_repeat = env.order_book.best_bid
+        best_ask_100_repeat = env.order_book.best_ask
+
+        # Verify bitwise reproducibility for all 6 agents
+        for idx, (s1, s3) in enumerate(zip(rng_states_run1, rng_states_run3)):
+            assert s1 == s3, (
+                f"Agent {env._background_agents[idx].agent_id} RNG state differed on identical seed"
+            )
+        assert best_bid_100 == best_bid_100_repeat
+        assert best_ask_100 == best_ask_100_repeat
+
+    def test_encapsulation_custom_agent_without_private_seed(self):
+        """Verify custom BaseAgent subclass without _seed resets cleanly and deterministically."""
+
+        class PublicSeededAgent(BaseAgent):
+            def __init__(self, agent_id: str):
+                super().__init__(agent_id, name="PublicSeeded")
+                self.public_seed: Optional[int] = None
+                self.rng = random.Random()
+
+            def reset(self, seed: Optional[int] = None) -> None:
+                super().reset(seed=seed)
+                self.public_seed = seed
+                if seed is not None:
+                    self.rng = random.Random(seed)
+
+            def generate_order(self, order_book, step: int):
+                return None
+
+        agent = PublicSeededAgent("custom_1")
+        assert not hasattr(agent, "_seed")
+
+        env = ExecutionEnv(config=ExecutionEnvConfig(background_agents=[agent]))
+        env.reset(seed=777)
+        bg = env._background_agents[0]
+        assert bg.public_seed == 777
+        state1 = bg.rng.getstate()
+
+        env.reset(seed=888)
+        bg = env._background_agents[0]
+        assert bg.public_seed == 888
+        state2 = bg.rng.getstate()
+        assert state1 != state2
+
+        env.reset(seed=777)
+        bg = env._background_agents[0]
+        assert bg.public_seed == 777
+        assert bg.rng.getstate() == state1
+
+    def test_custom_agent_inheriting_base_reset_without_override(self):
+        """Verify custom BaseAgent subclass inheriting reset(seed=None) works out-of-the-box."""
+
+        class MinimalAgent(BaseAgent):
+            def generate_order(self, order_book, step: int):
+                return None
+
+        agent = MinimalAgent("min_1", "Minimal")
+        agent.cash = Decimal("50000.0")
+        agent.position = 10
+
+        env = ExecutionEnv(config=ExecutionEnvConfig(background_agents=[agent]))
+        env.reset(seed=123)
+        bg = env._background_agents[0]
+        assert float(bg.cash) == 100_000.0
+        assert bg.position == 0
+

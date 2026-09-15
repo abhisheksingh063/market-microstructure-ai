@@ -238,12 +238,15 @@ class MarketMaker(BaseAgent):
         elif order.order_id == self.active_sell_quote_id and order.is_filled:
             self.active_sell_quote_id = None
 
-    def reset(self) -> None:
+    def reset(self, seed: Optional[int] = None) -> None:
         """Reset agent state, clear active quote IDs, and re-initialize RNG to configured seed."""
-        super().reset()
+        super().reset(seed=seed)
         self.cash = self.initial_cash
         self.active_buy_quote_id = None
         self.active_sell_quote_id = None
+        if seed is not None:
+            self._seed = seed
+            self.config.seed = seed
         self.rng = random.Random(self._seed)
 
 

@@ -255,11 +255,14 @@ class MeanReversionTrader(BaseAgent):
             quantity=quantity,
         )
 
-    def reset(self) -> None:
+    def reset(self, seed: Optional[int] = None) -> None:
         """Reset agent state, local price observations, and re-initialize RNG to configured seed."""
-        super().reset()
+        super().reset(seed=seed)
         self.cash = self.initial_cash
         self._observed_prices.clear()
+        if seed is not None:
+            self._seed = seed
+            self.config.seed = seed
         self.rng = random.Random(self._seed)
 
 

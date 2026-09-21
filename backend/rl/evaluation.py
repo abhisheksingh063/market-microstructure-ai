@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -25,7 +24,21 @@ if _BACKEND_DIR not in sys.path:
 import numpy as np  # noqa: E402
 
 from agents.market_maker import MarketMaker, MarketMakerConfig  # noqa: E402
-from rl.actions import ActionType  # noqa: E402
+from rl.baselines import (  # noqa: E402
+    BaseExecutionPolicy,
+    HoldBaselinePolicy,
+    RandomBaselinePolicy,
+    RuleBasedBaselinePolicy,
+    TWAPBaselinePolicy,
+    TWAPConfig,
+    VWAPBaselinePolicy,
+    VWAPConfig,
+    compute_volume_profile_from_candles,
+    compute_volume_profile_from_trades,
+    generate_canonical_volume_profile,
+    generate_twap_schedule,
+    generate_vwap_schedule,
+)
 from rl.environment import ExecutionEnv, ExecutionEnvConfig  # noqa: E402
 from rl.ppo import PPOAgent  # noqa: E402
 
@@ -47,9 +60,10 @@ class EvaluationConfig:
     def __post_init__(self) -> None:
         if self.episodes <= 0:
             raise ValueError(f"episodes must be positive, got {self.episodes}")
-        if self.baseline_type not in ("rule_based", "hold", "random"):
+        if self.baseline_type not in ("rule_based", "twap", "vwap", "hold", "random"):
             raise ValueError(
-                f"baseline_type must be 'rule_based', 'hold', or 'random', got {self.baseline_type}"
+                "baseline_type must be 'rule_based', 'twap', 'vwap', 'hold', or 'random', "
+                f"got {self.baseline_type}"
             )
 
 
@@ -206,80 +220,6 @@ class EvaluationResult:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         with open(target_path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
-
-
-# ── Baseline Execution Policies ──────────────────────────────────
-
-
-class RuleBasedBaselinePolicy:
-    """Deterministic, rule-based execution policy.
-
-    Inspects the observation vector (feature 10: remaining_execution_fraction)
-    and executes toward target inventory:
-    - If remaining_execution_fraction > 0: submits MARKET_BUY.
-    - If remaining_execution_fraction < 0: submits MARKET_SELL.
-    - If remaining_execution_fraction == 0: submits HOLD.
-
-    Guarantees zero intentional overshooting by immediately switching to HOLD
-    once the target inventory is satisfied.
-    """
-
-    def __init__(self, tolerance: float = 1e-6) -> None:
-        self.tolerance = tolerance
-
-    def predict(
-        self,
-        observation: np.ndarray,
-        state: Any = None,
-        episode_start: Any = None,
-        deterministic: bool = True,
-    ) -> tuple[int, None]:
-        """Generate action from observation matching standard SB3 predict API."""
-        # Feature 10 is remaining_execution_fraction: (target - position) / |target|
-        rem_frac = float(observation[10])
-
-        if rem_frac > self.tolerance:
-            # Under target: Buy 1 unit toward target
-            action = int(ActionType.MARKET_BUY)
-        elif rem_frac < -self.tolerance:
-            # Over target: Sell 1 unit toward target
-            action = int(ActionType.MARKET_SELL)
-        else:
-            # Target satisfied: Hold position
-            action = int(ActionType.HOLD)
-
-        return action, None
-
-
-class HoldBaselinePolicy:
-    """Passive baseline that takes ActionType.HOLD for every step."""
-
-    def predict(
-        self,
-        observation: np.ndarray,
-        state: Any = None,
-        episode_start: Any = None,
-        deterministic: bool = True,
-    ) -> tuple[int, None]:
-        return int(ActionType.HOLD), None
-
-
-class RandomBaselinePolicy:
-    """Random execution policy sampling uniform discrete actions."""
-
-    def __init__(self, action_count: int = 5, seed: Optional[int] = None) -> None:
-        self.action_count = action_count
-        self.rng = random.Random(seed)
-
-    def predict(
-        self,
-        observation: np.ndarray,
-        state: Any = None,
-        episode_start: Any = None,
-        deterministic: bool = True,
-    ) -> tuple[int, None]:
-        return self.rng.randint(0, self.action_count - 1), None
-
 
 # ── Policy Comparison ────────────────────────────────────────────
 
@@ -585,6 +525,18 @@ def evaluate_baseline(
         if cfg.baseline_type == "rule_based":
             policy = RuleBasedBaselinePolicy()
             p_name = policy_name or "rule_based_baseline"
+        elif cfg.baseline_type == "twap":
+            policy = TWAPBaselinePolicy(
+                target_quantity=env.config.target_inventory,
+                horizon=env.config.max_steps,
+            )
+            p_name = policy_name or "twap_baseline"
+        elif cfg.baseline_type == "vwap":
+            policy = VWAPBaselinePolicy(
+                target_quantity=env.config.target_inventory,
+                horizon=env.config.max_steps,
+            )
+            p_name = policy_name or "vwap_baseline"
         elif cfg.baseline_type == "hold":
             policy = HoldBaselinePolicy()
             p_name = policy_name or "hold_baseline"
@@ -716,6 +668,13 @@ def main() -> None:
         help="Path to final PPO model archive",
     )
     parser.add_argument(
+        "--baseline-type",
+        type=str,
+        default="rule_based",
+        choices=["rule_based", "twap", "vwap", "hold", "random"],
+        help="Baseline policy type to evaluate (default: rule_based)",
+    )
+    parser.add_argument(
         "--episodes",
         type=int,
         default=20,
@@ -743,6 +702,7 @@ def main() -> None:
     config = EvaluationConfig(
         episodes=args.episodes,
         seed=args.seed,
+        baseline_type=args.baseline_type,
         output_dir=args.output_dir,
     )
 
@@ -760,7 +720,7 @@ def main() -> None:
         res = evaluate_model(model_path=args.model_path, config=config)
         print(f"Result: Mean Reward={res.mean_reward:.2f}, Mean Shortfall={res.mean_shortfall:.2f}")
     else:
-        print("Evaluating Rule-Based Baseline...")
+        print(f"Evaluating Baseline: {args.baseline_type}...")
         res = evaluate_baseline(config=config)
         print(f"Result: Mean Reward={res.mean_reward:.2f}, Mean Shortfall={res.mean_shortfall:.2f}")
 
@@ -773,6 +733,16 @@ __all__ = [
     "EvaluationConfig",
     "EpisodeEvaluation",
     "EvaluationResult",
+    "BaseExecutionPolicy",
+    "TWAPConfig",
+    "generate_twap_schedule",
+    "TWAPBaselinePolicy",
+    "VWAPConfig",
+    "generate_canonical_volume_profile",
+    "generate_vwap_schedule",
+    "compute_volume_profile_from_trades",
+    "compute_volume_profile_from_candles",
+    "VWAPBaselinePolicy",
     "RuleBasedBaselinePolicy",
     "HoldBaselinePolicy",
     "RandomBaselinePolicy",

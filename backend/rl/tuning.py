@@ -32,6 +32,8 @@ from rl.evaluation import (
     PolicyComparison,
     RandomBaselinePolicy,
     RuleBasedBaselinePolicy,
+    TWAPBaselinePolicy,
+    VWAPBaselinePolicy,
     compare_policies,
     create_evaluation_env,
     evaluate_policy,
@@ -678,6 +680,8 @@ class HyperparameterTuner:
 
         baselines = {
             "rule_based": RuleBasedBaselinePolicy(),
+            "twap": TWAPBaselinePolicy(),
+            "vwap": VWAPBaselinePolicy(),
             "hold": HoldBaselinePolicy(),
             "random": RandomBaselinePolicy(seed=start_seed),
         }

@@ -87,6 +87,14 @@ class TestEvaluationConfig:
         with pytest.raises(ValueError, match="baseline_type must be"):
             EvaluationConfig(baseline_type="unknown_baseline")
 
+    def test_validation_valid_twap_type(self):
+        cfg = EvaluationConfig(baseline_type="twap")
+        assert cfg.baseline_type == "twap"
+
+    def test_validation_valid_vwap_type(self):
+        cfg = EvaluationConfig(baseline_type="vwap")
+        assert cfg.baseline_type == "vwap"
+
 
 class TestDataStructuresAndAggregation:
     """3, 4, 5, 14, 15, 16, 17, 28: EpisodeEvaluation and EvaluationResult aggregation."""

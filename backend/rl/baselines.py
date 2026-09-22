@@ -665,6 +665,397 @@ class RandomBaselinePolicy:
         return self.rng.randint(0, self.action_count - 1), None
 
 
+# ── Almgren–Chriss Baseline Policy ────────────────────────────────
+
+
+@dataclass(frozen=True)
+class AlmgrenChrissConfig:
+    """Configuration parameters for Almgren–Chriss (2000) optimal execution."""
+
+    target_quantity: int = 10
+    horizon: int = 50
+    order_quantity: int = 1
+    risk_aversion: float = 1e-4
+    volatility: float = 0.1
+    temporary_impact: float = 0.01
+    permanent_impact: float = 0.001
+    tolerance: float = 1e-6
+
+    def __post_init__(self) -> None:
+        if self.horizon < 0:
+            raise ValueError(f"horizon must be non-negative, got {self.horizon}")
+        if self.order_quantity <= 0:
+            raise ValueError(
+                f"order_quantity must be positive, got {self.order_quantity}"
+            )
+        if self.risk_aversion < 0.0:
+            raise ValueError(
+                f"risk_aversion must be non-negative, got {self.risk_aversion}"
+            )
+        if self.volatility < 0.0:
+            raise ValueError(
+                f"volatility must be non-negative, got {self.volatility}"
+            )
+        if self.temporary_impact <= 0.0:
+            raise ValueError(
+                f"temporary_impact must be strictly positive, got {self.temporary_impact}"
+            )
+        if self.permanent_impact < 0.0:
+            raise ValueError(
+                f"permanent_impact must be non-negative, got {self.permanent_impact}"
+            )
+
+
+def compute_almgren_chriss_urgency(
+    risk_aversion: float,
+    volatility: float,
+    temporary_impact: float,
+) -> float:
+    """Compute the Almgren–Chriss urgency parameter:
+
+        kappa = sqrt(lambda * sigma^2 / eta)
+
+    where:
+        lambda: Risk-aversion coefficient (>= 0)
+        sigma: Volatility / price-risk parameter (>= 0)
+        eta: Temporary market impact coefficient (> 0)
+    """
+    if risk_aversion <= 0.0 or volatility <= 0.0:
+        return 0.0
+    return math.sqrt(risk_aversion * (volatility ** 2) / temporary_impact)
+
+
+def generate_almgren_chriss_trajectory(
+    target_quantity: int,
+    horizon: int,
+    risk_aversion: float = 1e-4,
+    volatility: float = 0.1,
+    temporary_impact: float = 0.01,
+    permanent_impact: float = 0.001,
+    num_points: Optional[int] = None,
+) -> list[float]:
+    """Generate the optimal continuous Almgren–Chriss cumulative target inventory trajectory.
+
+    The continuous cumulative target inventory acquired by continuous time t in [0, horizon] is:
+        S_cont(t) = Q * (1 - sinh(kappa * (T - t)) / sinh(kappa * T))
+
+    where:
+        kappa = sqrt(lambda * sigma^2 / eta)
+
+    Limiting Properties:
+    1. Zero Risk Aversion (lambda -> 0, kappa -> 0):
+       S_cont(t) = Q * (t / T)  [strictly linear / continuous TWAP]
+    2. High Risk Aversion (lambda -> infinity, kappa -> infinity):
+       S_cont(t) -> Q for all t > 0  [immediate front-loaded liquidation/acquisition]
+    3. Boundary Conditions:
+       S_cont(0) == 0.0, S_cont(T) == target_quantity
+
+    Numerically stable implementation:
+    Uses the negative-exponential form to prevent math.sinh overflow when kappa * T is large:
+        sinh(kappa * (T - t)) / sinh(kappa * T)
+        = (exp(-kappa * t) - exp(-kappa * (2T - t))) / (1 - exp(-2 * kappa * T))
+
+    Args:
+        target_quantity: Total inventory to acquire (>0) or liquidate (<0).
+        horizon: Execution horizon T (>= 0).
+        risk_aversion: Risk aversion parameter lambda (>= 0).
+        volatility: Price volatility parameter sigma (>= 0).
+        temporary_impact: Temporary market impact parameter eta (> 0).
+        permanent_impact: Permanent market impact parameter gamma (>= 0).
+        num_points: Number of discrete evaluation points in [0, horizon].
+            Defaults to horizon + 1 (evaluating at t = 0, 1, ..., horizon).
+
+    Returns:
+        List of float cumulative target inventory values from t=0 to t=horizon.
+    """
+    if horizon <= 0:
+        return []
+    if target_quantity == 0:
+        n = num_points if num_points is not None else (horizon + 1)
+        return [0.0] * n
+
+    points = num_points if num_points is not None else (horizon + 1)
+    if points <= 1:
+        return [float(target_quantity)]
+
+    kappa = compute_almgren_chriss_urgency(
+        risk_aversion=risk_aversion,
+        volatility=volatility,
+        temporary_impact=temporary_impact,
+    )
+    t_f = float(horizon)
+    q_f = float(target_quantity)
+
+    trajectory: list[float] = []
+    for i in range(points):
+        t = (float(i) / float(points - 1)) * t_f
+        if i == 0:
+            trajectory.append(0.0)
+            continue
+        if i == points - 1:
+            trajectory.append(q_f)
+            continue
+
+        kappa_t_f = kappa * t_f
+        if kappa_t_f < 1e-6:
+            ratio = 1.0 - (t / t_f)
+        elif kappa_t_f > 100.0:
+            ratio = math.exp(-kappa * t)
+        else:
+            denom = 1.0 - math.exp(-2.0 * kappa_t_f)
+            num = math.exp(-kappa * t) - math.exp(-kappa * (2.0 * t_f - t))
+            ratio = num / denom if denom > 0 else 0.0
+
+        ratio = max(0.0, min(1.0, ratio))
+        s_t = q_f * (1.0 - ratio)
+        trajectory.append(s_t)
+
+    return trajectory
+
+
+def generate_almgren_chriss_schedule(
+    target_quantity: int,
+    horizon: int,
+    risk_aversion: float = 1e-4,
+    volatility: float = 0.1,
+    temporary_impact: float = 0.01,
+    permanent_impact: float = 0.001,
+) -> list[int]:
+    """Generate a deterministic, discrete integer cumulative target inventory schedule.
+
+    Evaluates the continuous Almgren–Chriss trajectory at each discrete step completion
+    t + 1 for t in [0, horizon - 1], and discretizes using half-up integer rounding:
+        S_ideal[t] = S_cont(t + 1) = Q * (1 - sinh(kappa * (T - (t + 1))) / sinh(kappa * T))
+        S_abs[t] = min(|Q|, floor(|S_ideal[t]| + 0.5))
+        S[t] = sign(Q) * S_abs[t]
+
+    Properties:
+    1. Exact Quantity Conservation: S[T-1] == target_quantity (exact integer target reached,
+       sum of slice increments sum(delta S) == target_quantity identically).
+    2. Monotonicity: Non-decreasing for buy orders (Q > 0), non-increasing for sell orders (Q < 0).
+    3. Indivisible Distribution: Integer allocation without fractional drift or dropped units.
+    4. Zero-Risk-Aversion Limit: Matches time-weighted linear distribution.
+    5. High-Risk-Aversion Limit: Front-loads integer execution to early steps.
+    6. Buy/Sell Symmetry: S(Q)[t] == -S(-Q)[t] for all t.
+
+    Args:
+        target_quantity: Total inventory to acquire (>0) or liquidate (<0).
+        horizon: Total simulation steps in the execution horizon (T >= 0).
+        risk_aversion: Risk aversion parameter lambda (>= 0).
+        volatility: Price volatility parameter sigma (>= 0).
+        temporary_impact: Temporary market impact parameter eta (> 0).
+        permanent_impact: Permanent market impact parameter gamma (>= 0).
+
+    Returns:
+        List of integer cumulative target inventory levels for each step t in [0, horizon-1].
+    """
+    if horizon <= 0 or target_quantity == 0:
+        return [0] * max(horizon, 0)
+
+    abs_q = abs(target_quantity)
+    sign_q = 1 if target_quantity > 0 else -1
+    kappa = compute_almgren_chriss_urgency(
+        risk_aversion=risk_aversion,
+        volatility=volatility,
+        temporary_impact=temporary_impact,
+    )
+    t_f = float(horizon)
+
+    schedule: list[int] = []
+    prev_s = 0
+
+    for step in range(horizon):
+        t_step = float(step + 1)
+        if step == horizon - 1:
+            schedule.append(target_quantity)
+            continue
+
+        kappa_t_f = kappa * t_f
+        if kappa_t_f < 1e-6:
+            ratio = 1.0 - (t_step / t_f)
+        elif kappa_t_f > 100.0:
+            ratio = math.exp(-kappa * t_step)
+        else:
+            denom = 1.0 - math.exp(-2.0 * kappa_t_f)
+            num = math.exp(-kappa * t_step) - math.exp(-kappa * (2.0 * t_f - t_step))
+            ratio = num / denom if denom > 0 else 0.0
+
+        ratio = max(0.0, min(1.0, ratio))
+        ideal_target = abs_q * (1.0 - ratio)
+        clamped_int = min(abs_q, math.floor(ideal_target + 0.5))
+
+        # Enforce weak monotonicity
+        clamped_int = max(prev_s, clamped_int)
+        prev_s = clamped_int
+
+        schedule.append(sign_q * clamped_int)
+
+    return schedule
+
+
+def compute_almgren_chriss_expected_shortfall(
+    target_quantity: int,
+    schedule: Sequence[int],
+    temporary_impact: float = 0.01,
+    permanent_impact: float = 0.001,
+) -> float:
+    """Compute theoretical expected implementation shortfall E[x] under Almgren–Chriss:
+
+        E[x] = 0.5 * gamma * Q^2 + eta * sum_{t=0}^{T-1} (delta S[t])^2
+    """
+    if not schedule or target_quantity == 0:
+        return 0.0
+
+    q_f = float(abs(target_quantity))
+    perm_cost = 0.5 * permanent_impact * (q_f ** 2)
+
+    diffs = [schedule[0]] + [schedule[t] - schedule[t - 1] for t in range(1, len(schedule))]
+    temp_cost = temporary_impact * sum(float(d) ** 2 for d in diffs)
+
+    return float(perm_cost + temp_cost)
+
+
+def compute_almgren_chriss_variance(
+    target_quantity: int,
+    schedule: Sequence[int],
+    volatility: float = 0.1,
+) -> float:
+    """Compute theoretical shortfall variance V[x] under Almgren–Chriss:
+
+        V[x] = sigma^2 * sum_{t=0}^{T-1} (Q - S[t])^2
+    """
+    if not schedule or target_quantity == 0:
+        return 0.0
+
+    variance = (volatility ** 2) * sum(
+        float(target_quantity - s) ** 2 for s in schedule
+    )
+    return float(variance)
+
+
+class AlmgrenChrissBaselinePolicy:
+    """Almgren–Chriss (2000) optimal execution baseline policy.
+
+    Tracks a deterministic cumulative inventory schedule that optimizes the
+    tradeoff between expected market impact cost and portfolio timing/inventory variance risk.
+
+    Core Invariants:
+    1. Optimal Tradeoff Pacing: Execution pacing follows the Almgren–Chriss
+       trajectory governed by urgency parameter kappa = sqrt(lambda * sigma^2 / eta).
+    2. Zero Overshooting Guarantee: Strictly returns ActionType.HOLD once target inventory
+       is reached or exceeded.
+    3. Exact Target Conservation: The schedule targets exactly target_quantity at horizon T-1.
+    4. Indivisible Quantities: All order decisions map to discrete integer units.
+    5. Realistic Liquidity Recovery: When market depth is thin, unfilled quantities remain
+       behind schedule and the policy naturally retries on subsequent steps through the matching
+       engine.
+    6. SB3 Predict Compatibility: Conforms to BaseExecutionPolicy protocol.
+    """
+
+    def __init__(
+        self,
+        config: Optional[AlmgrenChrissConfig] = None,
+        target_quantity: Optional[int] = None,
+        horizon: Optional[int] = None,
+        risk_aversion: float = 1e-4,
+        volatility: float = 0.1,
+        temporary_impact: float = 0.01,
+        permanent_impact: float = 0.001,
+        tolerance: float = 1e-6,
+    ) -> None:
+        if config is not None:
+            self.config = config
+        else:
+            t_qty = target_quantity if target_quantity is not None else 10
+            t_hor = horizon if horizon is not None else 50
+            self.config = AlmgrenChrissConfig(
+                target_quantity=t_qty,
+                horizon=t_hor,
+                risk_aversion=risk_aversion,
+                volatility=volatility,
+                temporary_impact=temporary_impact,
+                permanent_impact=permanent_impact,
+                tolerance=tolerance,
+            )
+
+        self.target_quantity = self.config.target_quantity
+        self.horizon = self.config.horizon
+        self.tolerance = self.config.tolerance
+        self.schedule = generate_almgren_chriss_schedule(
+            target_quantity=self.target_quantity,
+            horizon=self.horizon,
+            risk_aversion=self.config.risk_aversion,
+            volatility=self.config.volatility,
+            temporary_impact=self.config.temporary_impact,
+            permanent_impact=self.config.permanent_impact,
+        )
+        self._current_step = 0
+
+    def reset(self, seed: Optional[int] = None) -> None:
+        """Reset internal step counter for a new episode."""
+        self._current_step = 0
+
+    def predict(
+        self,
+        observation: np.ndarray,
+        state: Any = None,
+        episode_start: Any = None,
+        deterministic: bool = True,
+    ) -> tuple[int, Any]:
+        """Generate action from observation matching standard SB3 predict API."""
+        if episode_start is True:
+            self._current_step = 0
+
+        # Synchronize step counter with observation step progress if available
+        if len(observation) > 13 and self.horizon > 0:
+            obs_progress = float(observation[13])
+            obs_step = int(round(obs_progress * self.horizon))
+            if obs_progress == 0.0:
+                self._current_step = 0
+            elif abs(obs_step - self._current_step) > 1:
+                self._current_step = obs_step
+
+        step = min(self._current_step, max(self.horizon - 1, 0))
+
+        # Target inventory reached check (Zero Overshooting Guarantee)
+        rem_frac = float(observation[10]) if len(observation) > 10 else 0.0
+
+        if self.target_quantity != 0:
+            current_position = int(
+                round(self.target_quantity - rem_frac * abs(self.target_quantity))
+            )
+        elif len(observation) > 9:
+            current_position = int(round(float(observation[9]) * 100.0))
+        else:
+            current_position = 0
+
+        target_at_step = self.schedule[step] if self.schedule else self.target_quantity
+
+        if self.target_quantity > 0:
+            # BUYING: target > 0
+            if rem_frac <= self.tolerance or current_position >= self.target_quantity:
+                action = int(ActionType.HOLD)
+            elif current_position < target_at_step:
+                action = int(ActionType.MARKET_BUY)
+            else:
+                action = int(ActionType.HOLD)
+
+        elif self.target_quantity < 0:
+            # SELLING: target < 0
+            if rem_frac >= -self.tolerance or current_position <= self.target_quantity:
+                action = int(ActionType.HOLD)
+            elif current_position > target_at_step:
+                action = int(ActionType.MARKET_SELL)
+            else:
+                action = int(ActionType.HOLD)
+
+        else:
+            action = int(ActionType.HOLD)
+
+        self._current_step += 1
+        return action, None
+
+
 __all__ = [
     "BaseExecutionPolicy",
     "TWAPConfig",
@@ -676,6 +1067,13 @@ __all__ = [
     "compute_volume_profile_from_trades",
     "compute_volume_profile_from_candles",
     "VWAPBaselinePolicy",
+    "AlmgrenChrissConfig",
+    "compute_almgren_chriss_urgency",
+    "generate_almgren_chriss_trajectory",
+    "generate_almgren_chriss_schedule",
+    "compute_almgren_chriss_expected_shortfall",
+    "compute_almgren_chriss_variance",
+    "AlmgrenChrissBaselinePolicy",
     "RuleBasedBaselinePolicy",
     "HoldBaselinePolicy",
     "RandomBaselinePolicy",

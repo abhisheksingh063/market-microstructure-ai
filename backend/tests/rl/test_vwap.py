@@ -53,7 +53,6 @@ from core.models import Candle, Order, Trade
 from rl.actions import ActionType
 from rl.baselines import (
     BaseExecutionPolicy,
-    TWAPBaselinePolicy,
     VWAPBaselinePolicy,
     VWAPConfig,
     compute_volume_profile_from_candles,
@@ -71,7 +70,6 @@ from rl.evaluation import (
     evaluate_policy,
 )
 from rl.tuning import HyperparameterTuner, TuningConfig
-
 
 # ── 1. VWAPConfig Tests ──────────────────────────────────────────
 

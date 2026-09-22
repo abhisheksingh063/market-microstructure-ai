@@ -27,6 +27,7 @@ from typing import Any, Optional, Sequence, Union
 import numpy as np
 
 from rl.evaluation import (
+    AlmgrenChrissBaselinePolicy,
     EvaluationResult,
     HoldBaselinePolicy,
     PolicyComparison,
@@ -682,6 +683,7 @@ class HyperparameterTuner:
             "rule_based": RuleBasedBaselinePolicy(),
             "twap": TWAPBaselinePolicy(),
             "vwap": VWAPBaselinePolicy(),
+            "almgren_chriss": AlmgrenChrissBaselinePolicy(),
             "hold": HoldBaselinePolicy(),
             "random": RandomBaselinePolicy(seed=start_seed),
         }

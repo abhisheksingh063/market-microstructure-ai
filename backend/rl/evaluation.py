@@ -25,6 +25,8 @@ import numpy as np  # noqa: E402
 
 from agents.market_maker import MarketMaker, MarketMakerConfig  # noqa: E402
 from rl.baselines import (  # noqa: E402
+    AlmgrenChrissBaselinePolicy,
+    AlmgrenChrissConfig,
     BaseExecutionPolicy,
     HoldBaselinePolicy,
     RandomBaselinePolicy,
@@ -33,8 +35,13 @@ from rl.baselines import (  # noqa: E402
     TWAPConfig,
     VWAPBaselinePolicy,
     VWAPConfig,
+    compute_almgren_chriss_expected_shortfall,
+    compute_almgren_chriss_urgency,
+    compute_almgren_chriss_variance,
     compute_volume_profile_from_candles,
     compute_volume_profile_from_trades,
+    generate_almgren_chriss_schedule,
+    generate_almgren_chriss_trajectory,
     generate_canonical_volume_profile,
     generate_twap_schedule,
     generate_vwap_schedule,
@@ -60,10 +67,11 @@ class EvaluationConfig:
     def __post_init__(self) -> None:
         if self.episodes <= 0:
             raise ValueError(f"episodes must be positive, got {self.episodes}")
-        if self.baseline_type not in ("rule_based", "twap", "vwap", "hold", "random"):
+        valid_baselines = ("rule_based", "twap", "vwap", "almgren_chriss", "hold", "random")
+        if self.baseline_type not in valid_baselines:
             raise ValueError(
-                "baseline_type must be 'rule_based', 'twap', 'vwap', 'hold', or 'random', "
-                f"got {self.baseline_type}"
+                "baseline_type must be 'rule_based', 'twap', 'vwap', "
+                f"'almgren_chriss', 'hold', or 'random', got {self.baseline_type}"
             )
 
 
@@ -537,6 +545,12 @@ def evaluate_baseline(
                 horizon=env.config.max_steps,
             )
             p_name = policy_name or "vwap_baseline"
+        elif cfg.baseline_type == "almgren_chriss":
+            policy = AlmgrenChrissBaselinePolicy(
+                target_quantity=env.config.target_inventory,
+                horizon=env.config.max_steps,
+            )
+            p_name = policy_name or "almgren_chriss_baseline"
         elif cfg.baseline_type == "hold":
             policy = HoldBaselinePolicy()
             p_name = policy_name or "hold_baseline"
@@ -671,7 +685,7 @@ def main() -> None:
         "--baseline-type",
         type=str,
         default="rule_based",
-        choices=["rule_based", "twap", "vwap", "hold", "random"],
+        choices=["rule_based", "twap", "vwap", "almgren_chriss", "hold", "random"],
         help="Baseline policy type to evaluate (default: rule_based)",
     )
     parser.add_argument(
@@ -743,6 +757,13 @@ __all__ = [
     "compute_volume_profile_from_trades",
     "compute_volume_profile_from_candles",
     "VWAPBaselinePolicy",
+    "AlmgrenChrissConfig",
+    "compute_almgren_chriss_urgency",
+    "generate_almgren_chriss_trajectory",
+    "generate_almgren_chriss_schedule",
+    "compute_almgren_chriss_expected_shortfall",
+    "compute_almgren_chriss_variance",
+    "AlmgrenChrissBaselinePolicy",
     "RuleBasedBaselinePolicy",
     "HoldBaselinePolicy",
     "RandomBaselinePolicy",

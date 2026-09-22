@@ -95,6 +95,10 @@ class TestEvaluationConfig:
         cfg = EvaluationConfig(baseline_type="vwap")
         assert cfg.baseline_type == "vwap"
 
+    def test_validation_valid_almgren_chriss_type(self):
+        cfg = EvaluationConfig(baseline_type="almgren_chriss")
+        assert cfg.baseline_type == "almgren_chriss"
+
 
 class TestDataStructuresAndAggregation:
     """3, 4, 5, 14, 15, 16, 17, 28: EpisodeEvaluation and EvaluationResult aggregation."""

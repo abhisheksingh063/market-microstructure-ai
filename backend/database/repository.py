@@ -206,6 +206,28 @@ class AgentRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def update_stats(
+        self,
+        agent_id: str,
+        final_cash: Optional[float] = None,
+        final_position: int = 0,
+        total_trades: int = 0,
+        total_pnl: Optional[float] = None,
+    ) -> Optional[AgentORM]:
+        stmt = select(AgentORM).where(AgentORM.agent_id == agent_id)
+        result = await self._session.execute(stmt)
+        agent = result.scalar_one_or_none()
+        if agent is not None:
+            if final_cash is not None:
+                agent.final_cash = final_cash
+            agent.final_position = final_position
+            agent.total_trades = total_trades
+            if total_pnl is not None:
+                agent.total_pnl = total_pnl
+            await self.commit()
+        return agent
+
+
 
 # ── Agent Action Repository ─────────────────────────────────────────
 

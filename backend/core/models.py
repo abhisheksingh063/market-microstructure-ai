@@ -272,6 +272,64 @@ class OrderBook:
             ],
         }
 
+    def snapshot(self, levels: int = 10, max_trades: int = 20) -> dict:
+        """Rich order book snapshot for UI dashboard and API consumers.
+
+        Returns top bid/ask levels, top-of-book metrics (best bid, best ask,
+        spread, mid-price), aggregate available depth, empty status,
+        and recent executed trades.
+        """
+        bid_levels = [
+            {
+                "price": str(lvl.price),
+                "quantity": lvl.quantity,
+                "order_count": lvl.order_count,
+            }
+            for _, lvl in self.bids[:levels]
+        ]
+        ask_levels = [
+            {
+                "price": str(lvl.price),
+                "quantity": lvl.quantity,
+                "order_count": lvl.order_count,
+            }
+            for _, lvl in self.asks[:levels]
+        ]
+
+        total_bid_depth = sum(lvl.quantity for _, lvl in self.bids)
+        total_ask_depth = sum(lvl.quantity for _, lvl in self.asks)
+
+        recent_trades_data = []
+        if self.trades:
+            for t in reversed(self.trades[-max_trades:]):
+                recent_trades_data.append(
+                    {
+                        "trade_id": t.trade_id,
+                        "price": str(t.price),
+                        "quantity": t.quantity,
+                        "timestamp": (
+                            t.timestamp.isoformat()
+                            if hasattr(t.timestamp, "isoformat")
+                            else str(t.timestamp)
+                        ),
+                        "buyer_id": t.buyer_id,
+                        "seller_id": t.seller_id,
+                    }
+                )
+
+        return {
+            "bids": bid_levels,
+            "asks": ask_levels,
+            "best_bid": str(self.best_bid) if self.best_bid is not None else None,
+            "best_ask": str(self.best_ask) if self.best_ask is not None else None,
+            "spread": str(self.spread) if self.spread is not None else None,
+            "mid_price": str(self.mid_price) if self.mid_price is not None else None,
+            "total_bid_depth": total_bid_depth,
+            "total_ask_depth": total_ask_depth,
+            "is_empty": self.is_empty,
+            "recent_trades": recent_trades_data,
+        }
+
     def __repr__(self) -> str:
         return (
             f"OrderBook(bids={len(self.bids)} levels, "

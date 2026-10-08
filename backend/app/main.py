@@ -13,12 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from api.comparison_router import router as comparison_router
 from api.errors import (
     duplicate_record_handler,
     record_not_found_handler,
     simulator_error_handler,
     unhandled_exception_handler,
 )
+from api.rl_router import router as rl_router
 from api.router import router as api_router
 from api.websocket import manager
 from app.config import settings
@@ -59,6 +61,8 @@ app.add_exception_handler(SimulatorError, simulator_error_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(api_router, prefix="/api")
+app.include_router(rl_router, prefix="/api")
+app.include_router(comparison_router, prefix="/api")
 
 
 @app.get("/")

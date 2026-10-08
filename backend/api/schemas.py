@@ -212,3 +212,54 @@ class OHLCVResponse(BaseModel):
     trade_count: int
 
 
+# ── Order Book ──────────────────────────────────────────────────────
+
+
+class OrderBookLevelResponse(BaseModel):
+    price: str
+    quantity: int
+    order_count: int
+
+
+class OrderBookRecentTradeResponse(BaseModel):
+    trade_id: str
+    price: str
+    quantity: int
+    timestamp: str
+    buyer_id: str
+    seller_id: str
+
+
+class OrderBookSnapshotResponse(BaseModel):
+    bids: list[OrderBookLevelResponse] = Field(default_factory=list)
+    asks: list[OrderBookLevelResponse] = Field(default_factory=list)
+    best_bid: Optional[str] = None
+    best_ask: Optional[str] = None
+    spread: Optional[str] = None
+    mid_price: Optional[str] = None
+    total_bid_depth: int = 0
+    total_ask_depth: int = 0
+    is_empty: bool = True
+    recent_trades: list[OrderBookRecentTradeResponse] = Field(default_factory=list)
+    simulation_id: Optional[int] = None
+    step: Optional[int] = None
+    status: Optional[str] = None
+
+
+# ── Market Data Series ─────────────────────────────────────────────
+
+
+class MarketSeriesPointResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    step: int
+    timestamp: Optional[datetime] = None
+    mid_price: Optional[float] = None
+    best_bid: Optional[float] = None
+    best_ask: Optional[float] = None
+    spread: Optional[float] = None
+    trade_price: Optional[float] = None
+    trade_volume: Optional[int] = 0
+
+
+

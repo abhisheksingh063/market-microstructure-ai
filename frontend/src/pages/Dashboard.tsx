@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { MetricCard } from "../components/ui/MetricCard";
 import { Card } from "../components/ui/Card";
 import { Spinner } from "../components/ui/Spinner";
 import { ErrorBanner } from "../components/ui/ErrorBanner";
 import { EmptyState } from "../components/ui/EmptyState";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { LiveOrderBook } from "../components/orderbook/LiveOrderBook";
+import { PriceCharts } from "../components/charts/PriceCharts";
 import { healthService } from "../services/health";
+
 import { agentsService } from "../services/agents";
 import { ordersService } from "../services/orders";
 import { tradesService } from "../services/trades";
@@ -74,7 +78,36 @@ export function Dashboard() {
           }}
         />
       )}
+      <LiveOrderBook title="Live Order Book" />
+      <PriceCharts title="Live Price & Market Dynamics" compact={true} />
+      <div className="rl-dashboard-preview-card">
+        <div className="rl-preview-header">
+          <div>
+            <h3 className="card-title">RL Training & Policy Telemetry</h3>
+            <p className="rl-dashboard-desc" style={{ margin: 0 }}>
+              PPO deterministic execution baseline trained across 100k timesteps with 10 checkpoints.
+            </p>
+          </div>
+          <Link to="/rl" className="btn btn-secondary" style={{ textDecoration: "none" }}>
+            Open Full RL Dashboard →
+          </Link>
+        </div>
+      </div>
+      <div className="rl-dashboard-preview-card" style={{ marginTop: "1rem" }}>
+        <div className="rl-preview-header">
+          <div>
+            <h3 className="card-title">Strategy Benchmark & Statistical Evaluation</h3>
+            <p className="rl-dashboard-desc" style={{ margin: 0 }}>
+              Paired statistical comparison of 5 execution strategies (Rule-Based, TWAP, VWAP, Almgren–Chriss, PPO) across 50 matched seeds.
+            </p>
+          </div>
+          <Link to="/evaluation" className="btn btn-secondary" style={{ textDecoration: "none" }}>
+            Open Strategy Comparison →
+          </Link>
+        </div>
+      </div>
       <Card title="Recent Simulations">
+
         {loading ? (
           <Spinner label="Loading simulations..." />
         ) : error ? (

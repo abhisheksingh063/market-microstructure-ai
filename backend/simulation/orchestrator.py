@@ -242,6 +242,7 @@ class SimulationOrchestrator:
 
     def _execute_agents(self) -> None:
         """Ask each agent to generate orders and pass them to the matching engine."""
+        agents_by_id = {a.agent_id: a for a in self.agents}
         for agent in self.agents:
             if hasattr(agent, "generate_orders"):
                 raw_orders = agent.generate_orders(self.order_book, self._current_step)
@@ -257,6 +258,13 @@ class SimulationOrchestrator:
                 trades = self.matching_engine.process_order(order)
                 for tr in trades:
                     agent.on_trade(tr.trade, tr.maker_order)
+                    maker_id = (
+                        tr.maker_order.agent_id
+                        if hasattr(tr.maker_order, "agent_id")
+                        else None
+                    )
+                    if maker_id and maker_id in agents_by_id and maker_id != agent.agent_id:
+                        agents_by_id[maker_id].on_trade(tr.trade, tr.maker_order)
 
     def _record_metrics(self) -> None:
         """Record current order book state and trade data."""

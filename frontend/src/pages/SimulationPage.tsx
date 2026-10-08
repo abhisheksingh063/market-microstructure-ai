@@ -30,6 +30,9 @@ export function SimulationPage() {
       name: name.trim(),
       total_steps: Number.isNaN(steps) ? 1 : steps,
       random_seed: Number.isNaN(seed as number) ? null : seed,
+      config_json: {
+        agents: ["market_maker", "noise", "momentum", "mean_reversion", "informed"],
+      },
     });
     setSubmitting(false);
     if (created) {

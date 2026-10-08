@@ -4,6 +4,15 @@ export interface Level {
   order_count: number;
 }
 
+export interface RecentTrade {
+  trade_id: string;
+  price: string;
+  quantity: number;
+  timestamp: string;
+  buyer_id: string;
+  seller_id: string;
+}
+
 export interface OrderBookData {
   bids: Level[];
   asks: Level[];
@@ -11,6 +20,13 @@ export interface OrderBookData {
   best_ask: string | null;
   spread: string | null;
   mid_price: string | null;
+  total_bid_depth?: number;
+  total_ask_depth?: number;
+  is_empty?: boolean;
+  recent_trades?: RecentTrade[];
+  simulation_id?: number | null;
+  step?: number | null;
+  status?: string | null;
 }
 
 export interface Order {
@@ -42,3 +58,4 @@ export interface Trade {
   timestamp: string;
   created_at: string;
 }
+
